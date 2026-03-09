@@ -1,0 +1,33 @@
+# ===== 預設值設定 =====
+# GUI 啟動時載入作為預設；使用者透過 GUI 修改後，以 session_state 為準
+
+time_range:
+  start: 2007      # GUI 滑桿預設左端
+  end: 2024        # GUI 滑桿預設右端
+
+top_n: 10          # 每年取前幾名 HS6（GUI 可調整 5–20）
+
+rcep_countries:
+  asean10: [BN, KH, ID, LA, MY, MM, PH, SG, TH, VN]
+  others:  [CN, JP, KR, AU, NZ]
+
+agriculture_hs_chapters: [1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20,21,22,23,24]
+
+hs_base_version: "HS2017"
+
+# BACI 版本路由（年份邊界固定，通常不需修改）
+baci:
+  version_router:
+    "2007-2011": "HS07"
+    "2012-2016": "HS12"
+    "2017-2024": "HS17"
+  baci_dir: "data/raw/baci"
+  filename_pattern: "BACI_{version}_Y{year}_V*.csv"   # 使用萬用字元匹配版本號 (v4.0)
+
+taiwan_m49: 490
+
+output:
+  format: excel
+  language: zh
+  include_quality_sheet: true
+  output_dir: "output"

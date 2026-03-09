@@ -1,0 +1,12 @@
+# Python 產生的檔案
+__pycache__/
+*.pyc
+
+# 數據資料 (強烈建議排除)
+data/
+output/
+
+# IDE 與系統檔案
+.vscode/
+.idea/
+.DS_Store
