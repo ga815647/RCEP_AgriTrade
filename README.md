@@ -1,67 +1,446 @@
-# RCEP 農產品貿易分析系統 v4.0 — 使用說明
+# 🌾 RCEP 農產品貿易分析系統
 
-## 系統需求
+> **Taiwan's Agricultural Export Competitiveness under RCEP: A HS6-Level Trade Flow Analysis System**
 
-- Python 3.10+（[下載](https://www.python.org/downloads/)）
-- 目前本地磁碟至少需 8GB 可用空間
-- **不需要任何付費帳號或 API Key**
+本系統基於 CEPII BACI 雙邊貿易資料庫，以 HS6 六位碼層級分析台灣（M49=490）對 RCEP 15 國之農產品出口結構，並建構 RCEP 內部同品項貿易矩陣，以評估台灣農產品在區域整合架構下之競爭替代風險。
 
-## 安裝
+---
+
+## 1. 研究動機與分析目標
+
+RCEP（Regional Comprehensive Economic Partnership）於 2022 年 1 月 1 日生效，涵蓋 ASEAN 10 國及中國、日本、韓國、澳洲、紐西蘭等 15 個經濟體，形成全球最大的自由貿易區（佔全球 GDP 約 30%、貿易總額約 28%）。
+
+台灣非 RCEP 締約方。隨 RCEP 逐步推進關稅減讓（目標為 10-20 年內達成 90% 以上品項零關稅），台灣農產品出口將面臨以下結構性衝擊：
+
+1. **關稅差異劣勢**（Tariff Margin Erosion）：RCEP 成員國間互享優惠稅率，台灣同類商品須適用 MFN（最惠國）稅率，價格競爭力遞減。
+2. **市場替代效應**（Trade Diversion）：進口國傾向轉向 RCEP 內部供應來源，壓縮台灣出口份額。
+
+本系統旨在量化上述風險，具體回答以下問題：
+
+- **Q1**：台灣對 RCEP 出口之農產品中，金額前 *N* 名品項（HS6 碼層級）為何？其時間序列趨勢如何？
+- **Q2**：上述重點品項，RCEP 成員國之間是否存在大量內部貿易？（即：是否已有替代供應來源？）
+- **Q3**：RCEP 內部該品項之貿易規模相對台灣出口額的比例為何？趨勢方向為何？
+
+---
+
+## 2. 資料來源
+
+### 2.1 BACI（Base pour l'Analyse du Commerce International）
+
+| 項目 | 內容 |
+|------|------|
+| **維護機構** | CEPII（Centre d'Études Prospectives et d'Informations Internationales） |
+| **原始資料** | UN Comtrade（聯合國商品貿易統計資料庫） |
+| **調和方法** | 以出口國申報值（FOB）與進口國申報值（CIF）進行交叉比對，透過統計推估法（Gaulier & Zignago, 2010）產出單一調和貿易流量值 |
+| **空間涵蓋** | ≈ 200 國/地區 |
+| **時間涵蓋** | 1995–2024（依版本而異） |
+| **品項涵蓋** | HS6 六位碼，約 5,000 個品項 |
+| **單位** | 千美元（Thousands of USD） |
+| **取得方式** | https://www.cepii.fr/CEPII/en/bdd_modele/bdd_modeable_item.asp?id=37 ，免費下載，無需帳號 |
+
+> **引用格式**：Gaulier, G. and Zignago, S. (2010), "BACI: International Trade Database at the Product-Level. The 1994-2007 Version", *CEPII Working Paper*, N°2010-23.
+
+### 2.2 HS 版本對照表
+
+| 對照表 | 來源 |
+|--------|------|
+| HS2017 ↔ HS2007 | [UN Stats Conversion Tables](https://unstats.un.org/unsd/classifications/Econ/tables/HS2017toHS2007ConversionAndCorrelationTables.xlsx) |
+| HS2017 ↔ HS2012 | [UN Stats Conversion Tables](https://unstats.un.org/unsd/classifications/Econ/tables/HS2017toHS2012ConversionAndCorrelationTables.xlsx) |
+
+### 2.3 BACI 版本與時間涵蓋
+
+| BACI Dataset | HS Nomenclature | Years Covered | Routing in System |
+|-------------|-----------------|---------------|-------------------|
+| BACI_HS07 | HS Revision 2007 | 2007–2011 | `config.yaml → version_router` |
+| BACI_HS12 | HS Revision 2012 | 2012–2016 | 同上 |
+| BACI_HS17 | HS Revision 2017 | 2017–2024 | 同上 |
+
+---
+
+## 3. 分析方法論
+
+### 3.1 Pipeline 總覽
+
+```
+                    ┌──────────────┐
+                    │   BACI CSV   │  raw trade flows (t, i, j, k, v, q)
+                    └──────┬───────┘
+                           │
+              ┌────────────┴────────────┐
+              ▼                         ▼
+     ┌─────────────────┐      ┌─────────────────┐
+     │   Stage 1       │      │   Stage 2       │
+     │ Taiwan Exports  │      │ RCEP Matrix     │
+     │ M49=490 → RCEP  │◄────│ RCEP₁₅ × RCEP₁₅ │
+     │ HS Harmonize    │ top10│ filter by        │
+     │ Top-N Ranking   │─────►│ allowed_raw_codes│
+     └────────┬────────┘      └────────┬────────┘
+              │                        │
+              └───────────┬────────────┘
+                          ▼
+                 ┌─────────────────┐
+                 │   Stage 3       │
+                 │ Merge & Clean   │
+                 │ HS → HS2017     │
+                 │ Metadata Join   │
+                 │ Quality Flags   │
+                 └────────┬────────┘
+                          ▼
+                 ┌─────────────────┐
+                 │   Stage 4       │
+                 │ Excel Export    │
+                 │ 6 Worksheets   │
+                 └─────────────────┘
+```
+
+### 3.2 Stage 1：台灣出口 Top-N 計算
+
+**輸入**：BACI CSV（各年度）
+
+**步驟**：
+
+1. 從各年度 BACI 原始資料中，篩選 `i = 490`（台灣 M49 代碼）且 `j ∈ RCEP₁₅`（15 個 RCEP 成員國之 M49 集合）的紀錄。
+
+2. 進一步限縮為農產品範圍：HS Chapter 01–24（依 HS6 前兩碼判定）。
+
+3. **HS 版本同步轉換（Harmonization）**：由於不同年份的 BACI 資料使用不同 HS 版本（HS07/HS12/HS17），為確保跨年度可比性，在計算排名前，先將所有 HS6 代碼統一轉換至 **HS2017 基準**。
+
+4. 以轉換後之 HS2017 代碼進行 `groupby` 加總後，取出口金額前 *N* 名。
+
+**輸出**：`top10_dict = { "2007": ["030617", "210690", ...], "2008": [...], ... }`
+
+> **設計決策**：Top-N 必須在 HS 同步轉換之後計算（v4.1 修正）。
+> 若在轉換前計算，則：(a) HS07 時代的 `030379`（一個大類）可能排名第一，但轉換後被拆成 13 個 HS17 代碼，每個代碼的金額僅為原始的 1/13，不再具有 Top-N 資格；(b) 跨年度排名基準不一致，2015 年的 Top 1 與 2020 年的 Top 1 可能代表不同分類粒度的商品。
+
+### 3.3 HS Nomenclature Harmonization
+
+本系統使用 UN Stats 提供之 HS 版本對照表（Conversion & Correlation Tables），建立映射字典：
+
+```
+concordance = {
+    "HS2007": { old_code → [new_code_1, new_code_2, ...] },
+    "HS2012": { old_code → [new_code_1, new_code_2, ...] }
+}
+```
+
+**映射類型與處理邏輯**：
+
+| 映射類型 | 範例 | 處理方式 |
+|---------|------|---------|
+| **1:1**（代碼不變） | `010121` → `010121` | 直接對應，`weight = 1.0` |
+| **1:N**（一碼拆多碼） | `030749` → `{030743, 030749}` | 等比分配：`Value_new = Value_old / N` |
+| **N:1**（多碼合一碼） | `{040110, 040120}` → `040110` | 各自獨立映射，加總後即為合併值 |
+| **Unmapped**（無對應） | 新版本才出現的代碼 | 保留原碼，標記 `hs_mapped = False` |
+
+**等比分配公式**（適用於 1:N 拆分）：
+
+$$V_{new_i} = \frac{V_{old}}{N}, \quad \forall\, i \in \{1, 2, \ldots, N\}$$
+
+其中 $V_{old}$ 為舊代碼之原始貿易值，$N$ 為該舊代碼對應的新代碼數量。
+
+> **已知限制**：等比分配假設各子類別之貿易金額相等，此假設在實務上通常不成立。理想情況下應使用各子類別在目標年份（HS2017 年份）中的實際貿易金額比例作為權重（Proportional Allocation），但此方法需要額外的校準資料集，目前版本尚未實作。
+
+### 3.4 Stage 2：RCEP 內部矩陣擷取
+
+**目標**：擷取 RCEP 15 國之間、台灣 Top-N 品項的貿易流量。
+
+**反向查表機制（Reverse Concordance Lookup）**：
+
+由於 `top10_dict` 包含的是 **HS2017 代碼**，但 2007–2016 年的 BACI 原始資料使用 HS07 或 HS12 代碼，因此無法直接比對。系統實作了反向查表邏輯：
+
+```python
+allowed_raw_codes = set(top10_hs17)  # 初始化：HS17 代碼本身
+for old_code, new_codes in concordance[hs_version].items():
+    if any(nc in top10_hs17 for nc in new_codes):
+        allowed_raw_codes.add(old_code)
+```
+
+此步驟確保所有「未來會被轉換為 Top-N 品項」的歷史舊代碼都被納入篩選範圍。
+
+### 3.5 Stage 3：資料清理、轉換與標記
+
+1. **RCEP 內部資料**：逐筆經過 `harmonize_to_hs2017()` 轉換為 HS2017 代碼。
+2. **台灣出口資料**：同樣逐筆經過 `harmonize_to_hs2017()` 轉換（v4.1 修正）。
+3. **Metadata 合併**：
+   - 英文商品說明（`HS6_Description_EN`）：從 BACI 附帶之 `product_codes_HS{ver}_V*.csv` 讀取，若目標版本無對應則 fallback 至 HS17。
+   - 國家名稱：從 `country_codes_V*.csv` 讀取。
+4. **品質標記**：
+   - `data_provisional = True`：2023–2024 年（BACI 初步估計值）
+   - `data_quality = "sparse"`：BRN（汶萊）、LAO（寮國）、MMR（緬甸）
+5. **Taiwan_Top10_Flag**：所有記錄（不論台灣或 RCEP）在轉換為最終 HS2017 代碼後，統一對照 `top10_dict` 標記。
+
+### 3.6 Stage 4：報表產出
+
+產出包含 6 個工作表的 `.xlsx` 檔案（詳見第 5 節「結果判讀」）。
+
+若資料量超過 1,000,000 列（Excel 上限），自動切換為 `.csv` 輸出。
+
+---
+
+## 4. 系統使用指南
+
+### 4.1 環境需求
+
+| 項目 | 要求 |
+|------|------|
+| Python | ≥ 3.10 |
+| 磁碟空間 | ≥ 8 GB（BACI 三版約 6 GB） |
+| 網路 | 僅首次下載資料時需要 |
+| 付費服務 | 無（不需要 API Key） |
+
+### 4.2 安裝步驟
 
 ```bash
-git clone [repo_url]
-cd rcep_agri_trade
+# 1. 取得程式碼
+git clone https://github.com/ga815647/RCEP_AgriTrade.git
+cd RCEP_AgriTrade
+
+# 2. 安裝 Python 相依套件
 pip install -r requirements.txt
 ```
 
-## 首次使用：手動準備步驟（只需做一次）
+### 4.3 資料準備（僅需執行一次）
 
-### 步驟 P1（30–60 分鐘）：下載 BACI 最新版本
+#### Step 1：下載 BACI 資料（約 30-60 分鐘）
 
-前往 `https://www.cepii.fr/CEPII/en/bdd_modele/bdd_modele_item.asp?id=37`
-**不需要註冊帳號**，直接下載最新版本的三個 zip 壓縮檔。
+前往 https://www.cepii.fr/CEPII/en/bdd_modele/bdd_modele_item.asp?id=37
 
-| BACI 版本 | 下載檔案範例 | 解壓縮路徑 |
-|---------|---------|-----------|
-| **BACI HS07** | `BACI_HS07_V202XXXX.zip` | `data/raw/baci/hs07/` |
-| **BACI HS12** | `BACI_HS12_V202XXXX.zip` | `data/raw/baci/hs12/` |
-| **BACI HS17** | `BACI_HS17_V202XXXX.zip` | `data/raw/baci/hs17/` |
+下載最新版本的三個 ZIP 壓縮檔，解壓縮至對應目錄：
 
-> ⚠️ 注意：各版本的資料夾中應包含其附帶的 `product_codes_HS*_V*.csv`，系統會自動根據資料年份補入正確的英文商品說明。國家代碼則統一由 `hs17` 目錄讀取。
+```
+data/raw/baci/
+├── hs07/    ← BACI_HS07_V*.zip 解壓縮內容
+│   ├── BACI_HS07_Y2007_V202601.csv
+│   ├── BACI_HS07_Y2008_V202601.csv
+│   ├── ...
+│   └── product_codes_HS07_V202601.csv
+├── hs12/    ← BACI_HS12_V*.zip 解壓縮內容
+│   ├── BACI_HS12_Y2012_V202601.csv
+│   ├── ...
+│   ├── product_codes_HS12_V202601.csv
+│   └── country_codes_V202601.csv
+└── hs17/    ← BACI_HS17_V*.zip 解壓縮內容
+    ├── BACI_HS17_Y2017_V202601.csv
+    ├── ...
+    ├── product_codes_HS17_V202601.csv
+    └── country_codes_V202601.csv   ← 系統從此處讀取國家代碼
+```
 
-### 步驟 P2（5 分鐘）：下載 HS 版本對照表
+> 系統使用 `glob` 萬用字元匹配（`BACI_{version}_Y{year}_V*.csv`），CEPII 更新版本號時無需修改任何程式碼。
 
-請直接點擊以下連結下載 UN Stats 提供的對照表，並放入 `data/reference/`：
+#### Step 2：下載 HS 版本對照表（約 5 分鐘）
 
-1. [HS2017 to HS2007 Conversion](https://unstats.un.org/unsd/classifications/Econ/tables/HS2017toHS2007ConversionAndCorrelationTables.xlsx)
-2. [HS2017 to HS2012 Conversion](https://unstats.un.org/unsd/classifications/Econ/tables/HS2017toHS2012ConversionAndCorrelationTables.xlsx)
+下載以下兩個 Excel 檔案，放入 `data/reference/` 目錄：
 
-> **檔名說明**：請保持原始長檔名（如 `HS2017toHS2007...xlsx`），系統已設定為自動反轉映射方向且支援 6 碼補零與金額等比分配。
+1. [HS2017toHS2007ConversionAndCorrelationTables.xlsx](https://unstats.un.org/unsd/classifications/Econ/tables/HS2017toHS2007ConversionAndCorrelationTables.xlsx)
+2. [HS2017toHS2012ConversionAndCorrelationTables.xlsx](https://unstats.un.org/unsd/classifications/Econ/tables/HS2017toHS2012ConversionAndCorrelationTables.xlsx)
 
-## 啟動系統
+> 請保持原始檔名。系統會自動偵測欄位並反轉映射方向（原始檔案為 HS2017 → 舊版，系統反轉為 舊版 → HS2017）。
+
+### 4.4 啟動與操作
 
 ```bash
 streamlit run app.py
 ```
 
-瀏覽器會自動開啟，系統啟動後會先執行「環境檢查」：
-- ✅ 代表檔案已就緒。
-- ❌ 代表檔案缺失，請檢查資料夾路徑與檔名是否與上述步驟一致。
+瀏覽器自動開啟後：
 
-## 操作說明
+1. **環境檢查**：畫面上方以 ✅/❌ 清單顯示各必要檔案是否就位。
+2. **參數設定**（左側邊欄）：
+   - 年份範圍滑桿：預設 2007–2024
+   - Top-N 滑桿：預設 10（可調整 5–20）
+3. **執行**：點選「▶ 開始執行」，進度條會依序顯示 Stage 1–4。
+4. **輸出**：執行完成後點選「📥 下載 Excel 報表」。
 
-1. **設定年份**：拖拉側邊欄的年份滑桿選擇分析範圍（預設 2007–2024）。
-2. **設定 Top N**：預設取前 10 大品項。
-3. **執行分析**：點選「▶ 開始執行」。系統會自動從 BACI 取用台灣資料（M49=490），無須連網。
-4. **下載結果**：執行完成後，點選下方出現的「📥 下載 Excel 報表」。
+---
 
-## 常見問題 (FAQ)
+## 5. 結果判讀
 
-**Q：台灣數據來自哪裡？**
-A：本系統為貫徹單一來源，台灣數據（M49=490）直接由 BACI 本地 CSV 過濾取得。這避開了財政部關務署 URL 經常失效的問題。
+### 5.1 輸出工作表結構
 
-**Q：2023–2024 年的資料為什麼有 provisional 標記？**
-A：BACI 的最新兩年通常為初步估計值，未來發布新版本時可能會有些微修正。
+| # | 工作表名稱 | 內容 | 用途 |
+|---|-----------|------|------|
+| 1 | `長表_完整數據` | 台灣 + RCEP 所有紀錄 | 進階分析用原始資料 |
+| 2 | `Top10_HS6_清單` | 每年台灣出口前 N 品項 | **核心摘要** |
+| 3 | `台灣_RCEP出口明細` | 台灣全部農產品出口 | 台灣出口全貌 |
+| 4 | `RCEP內部_出口矩陣` | RCEP 間 Top-N 品項貿易 | **競爭態勢分析** |
+| 5 | `年度彙整_出口總額` | 按國家×年份加總 | 趨勢比較 |
+| 6 | `數據品質報告` | 各年品質標記統計 | 資料可信度評估 |
 
-**Q：為什麼不需要 HS22 對照表？**
-A：BACI HS17 版本已經包含了 2022-2024 年的數據，且代碼已經統一轉換為 HS2017。因此使用 HS17 版本即可涵蓋至 2024 年。
+### 5.2 關鍵欄位說明
+
+| 欄位 | 型態 | 說明 |
+|------|------|------|
+| `HS6_Code` | str(6) | 統一後的 HS2017 六位碼。前導零保留（如 `030617`）。 |
+| `HS6_Code_Original` | str(6) | 轉換前的原始代碼（HS07 或 HS12 版本）。若無轉換，與 HS6_Code 相同。 |
+| `HS6_Description_EN` | str | BACI metadata 提供的英文品項說明。 |
+| `Value_USD` | float | 貿易金額（美元）。注意 BACI 原始單位為千美元，系統已乘以 1000 轉換。 |
+| `baci_version` | str | 原始資料所屬 BACI 版本：`HS07` / `HS12` / `HS17`。 |
+| `Taiwan_Top10_Flag` | bool | 該品項（以 HS2017 代碼判定）是否為當年度台灣出口的前 N 名。 |
+| `hs_converted` | bool | 是否經過 HS 版本轉換。若為 True，代表原始代碼 ≠ 最終代碼。 |
+| `hs_split` | bool | 是否經過 1:N 拆分。若為 True，金額已被等比稀釋。 |
+| `hs_mapped` | bool | 是否在對照表中找到有效映射。若為 False，代表可能是新增代碼或對照缺失。 |
+| `data_provisional` | bool | 是否為 BACI 初步值（通常為最近兩年）。 |
+| `data_quality` | str | `verified`（正式值）/ `provisional`（初步值）/ `sparse`（小國稀疏資料）。 |
+
+### 5.3 解讀範例
+
+#### 範例 A：辨識台灣核心出口品項
+
+在 `Top10_HS6_清單` 中觀察：
+- 若 `030617`（冷凍蝦）從 2007 到 2024 年**每年都在 Top 10**，代表這是台灣對 RCEP 的**結構性核心出口品項**。
+- 若 `210690`（其他食品調製品）在 2018 年後排名驟升，可能反映台灣食品加工業的出口轉型。
+
+#### 範例 B：評估競爭替代風險
+
+在 `RCEP內部_出口矩陣` 中篩選 `HS6_Code = "030617"`：
+- 若越南（VNM）→ 日本（JPN）的 `030617` 出口金額從 2015 年的 5,000 萬美元增長到 2024 年的 2 億美元，而同期台灣對日本的同品項出口持平或下降，此 **交叉趨勢** 強烈暗示越南正在替代台灣的市場份額。
+- 可進一步計算台灣的**市場佔有率**：
+
+$$\text{Market Share}_{TW \to JP}^{030617}(t) = \frac{V_{TW \to JP}^{030617}(t)}{\sum_{\forall\, c \in \{TW, \text{RCEP}_{15}\}} V_{c \to JP}^{030617}(t)}$$
+
+#### 範例 C：識別 HS 拆分對數據的影響
+
+若在 `長表_完整數據` 中發現某品項 2010-2011 年的 `hs_split = True`：
+- 代表該筆金額是來自一個更大的舊代碼類別按 1/N 均分的結果。
+- 若 N 值很大（如 13），單筆金額的估計誤差可能很高，建議改用 `HS6_Code_Original` 回溯原始類別金額。
+
+---
+
+## 6. 已知限制
+
+| 項目 | 說明 | 影響程度 |
+|------|------|---------|
+| **矩陣範圍** | RCEP 內部矩陣僅篩選台灣 Top-N 品項，非各國農產品出口全貌 | ⚠️ 中 |
+| **等比分配假設** | 1:N HS 拆分時假設各子類別金額相等 | ⚠️ 中（個別品項可能高估或低估） |
+| **初步值** | 2023-2024 為 BACI 暫估值 | ⚠️ 低（趨勢方向通常可靠） |
+| **M49=490** | 台灣在 UN Comtrade 中歸類為 "Other Asia, nes"，部分國家可能未申報對台進口 | ⚠️ 中 |
+| **不含服務貿易** | 僅分析 HS 編碼涵蓋之商品（貨物）貿易 | ℹ️ 系統邊界 |
+| **無加權拆分** | 未使用 Proportional Allocation 校準 1:N 拆分權重 | ℹ️ 改進方向 |
+| **農產品定義** | HS Chapter 01-24，不含 Chapter 44（木材）或 Chapter 52（棉花）等廣義農林產品 | ℹ️ 系統邊界 |
+
+### 6.1 報表判讀注意事項（來自實際產出的觀察）
+
+以下三項為實際執行後觀察到的現象，非程式錯誤，但引用數據時須留意：
+
+#### 🟡 注意 1：同一 HS6 代碼可能出現多個英文說明
+
+**現象**：例如 `030344`（大目鮪，Bigeye tunas）在 Excel 長表中，不同年份的 `HS6_Description_EN` 欄位可能出現兩到三種略有差異的文字描述。
+
+**成因**：系統從各 BACI 版本的 `product_codes` 檔案讀取商品說明。HS07、HS12、HS17 三個版本對同一代碼的英文措辭可能微有不同（例如 "Tunas, bigeye" vs "Bigeye tunas, frozen"）。當該代碼在 HS2017 對照表中無需轉換（1:1 映射），系統直接沿用原始版本的說明文字。
+
+**影響**：**不影響任何數值計算**。僅視覺上不統一。若需一致化，可在 Excel 中以 `HS6_Code` 做 VLOOKUP，統一替換為 HS17 版本的說明。
+
+#### 🟡 注意 2：最新年份的數值波動需謹慎引用
+
+**現象**：例如台灣→中國 2024 年之出口總額可能較 2022-2023 年出現明顯反彈或波動。
+
+**成因**：
+1. BACI 的 2023-2024 年數據標記為 `data_provisional = True`，為 CEPII 基於已接收申報的初步估計值，後續版本可能修正 5-15%。
+2. BACI 的調和方法（Reconciliation）涉及出口方與進口方的交叉比對。對於台灣（M49=490），由於部分進口國可能未單獨申報對台貿易，CEPII 的統計推估可能將經第三方轉口的貿易流量計入，導致數字偏高或偏低。
+
+**建議**：引用最新年份數據時，應標注「BACI 初步值，可能隨後續版本修正」。可在報表中以 `data_provisional` 欄位識別此類紀錄。
+
+#### 🟡 注意 3：RCEP 矩陣中各國出口僅為「台灣 Top-N 品項的切面」
+
+**現象**：例如澳洲在 RCEP 矩陣中僅顯示 `210690`（其他食品調製品）、`230990`（其他動物飼料）等少數品項，出口金額看起來很小。
+
+**成因**：RCEP 內部矩陣的篩選邏輯為「只保留台灣 Top-N 品項」。澳洲的農產品出口主力（如小麥 `100199`、牛肉 `020230`、大麥 `100390`）幾乎不會出現在台灣的 Top 10 中，因此不在矩陣範圍內。
+
+**影響**：**此矩陣不可用於評估各國農產品出口的整體規模或排名**，僅適用於分析「*在台灣最重要的 N 項農產品上*，哪些 RCEP 國家是主要競爭者」這一特定問題。若需各國農產品出口全貌，應直接使用 BACI 原始資料或 UN Comtrade。
+
+---
+
+## 7. 技術風險矩陣
+
+| 風險事件 | 發生條件 | 影響 | 處置方式 |
+|---------|---------|------|---------|
+| CEPII 版本號更新 | BACI 釋出新版（如 V202702） | 舊版的 V202601 不再更新 | `glob` 匹配，無需改碼 |
+| HS2022 版本出現 | BACI 未來可能推出 HS22 Dataset | 需新增轉換規則 | 新增 `HS22→HS17` 對照表，加入 `version_router` |
+| Excel 行數上限 | 分析範圍或 Top-N 過大 | 超過 1,048,576 列 | 自動切換 CSV 輸出 |
+| 記憶體不足 | 大量年份同時載入 | OOM Error | `baci_cache` 讀後即釋放，同一年只保留到 Stage 2 完成 |
+
+---
+
+## 8. 專案結構
+
+```
+RCEP_AgriTrade/
+├── app.py                 # Streamlit entry point
+├── config.yaml            # Runtime configuration (year range, RCEP countries, routing)
+├── requirements.txt       # Python dependencies
+├── README.md              # This file
+│
+├── pipeline/
+│   ├── stage1_taiwan.py   # Taiwan exports extraction + HS harmonization + Top-N
+│   ├── stage2_baci.py     # RCEP intra-trade matrix with reverse concordance lookup
+│   ├── stage3_clean.py    # Merge, harmonize, metadata join, quality flags
+│   └── stage4_export.py   # Multi-sheet Excel export
+│
+├── utils/
+│   ├── baci_loader.py     # BACI CSV reader with glob matching (v4.0)
+│   ├── hs_harmonizer.py   # HS concordance table loader & harmonization engine
+│   ├── country_codes.py   # M49/ISO3/ISO2 country code mappings
+│   ├── validators.py      # Pre-flight environment checks
+│   └── cache.py           # SQLite-based pipeline cache
+│
+└── data/                  # (Not tracked in Git)
+    ├── raw/baci/          # BACI CSV files (hs07/, hs12/, hs17/)
+    └── reference/         # UN Stats HS conversion Excel tables
+```
+
+---
+
+## 9. 設定檔說明（`config.yaml`）
+
+```yaml
+time_range:
+  start: 2007              # 分析起始年份
+  end: 2024                # 分析終止年份
+
+top_n: 10                  # 每年取前 N 大品項
+
+rcep_countries:
+  asean10: [BN, KH, ID, LA, MY, MM, PH, SG, TH, VN]
+  others:  [CN, JP, KR, AU, NZ]
+
+agriculture_hs_chapters: [1..24]   # 農產品 HS 章節範圍
+
+baci:
+  version_router:          # 年份 → BACI 版本的路由規則
+    "2007-2011": "HS07"
+    "2012-2016": "HS12"
+    "2017-2024": "HS17"
+  baci_dir: "data/raw/baci"
+  filename_pattern: "BACI_{version}_Y{year}_V*.csv"
+
+taiwan_m49: 490            # 台灣的 M49 代碼
+
+output:
+  format: excel
+  include_quality_sheet: true
+  output_dir: "output"
+```
+
+---
+
+## 10. 常見問題
+
+| 問題 | 回答 |
+|------|------|
+| 需要網路嗎？ | 首次下載資料後，所有分析均在本機離線完成。 |
+| 台灣數據從哪來？ | 從 BACI CSV 中以 `i=490` 過濾，同一資料庫、同一統計方法。 |
+| 跟海關數據不一致？ | BACI 使用出進口交叉調和；海關為單方申報。方法論不同、數字有差異，趨勢通常一致。 |
+| 新版 BACI 怎麼更新？ | 重新下載 ZIP → 解壓縮覆蓋 → 無需改碼（glob 匹配）。 |
+| 可以分析 Top 20 嗎？ | GUI 左側邊欄直接調整。 |
+| 為何不用 HS2022？ | BACI HS17 已涵蓋至 2024 年，尚無需要。 |
+
+---
+
+## 11. 授權與引用
+
+本專案之分析結果基於 CEPII BACI 資料庫。學術使用時請引用：
+
+> Gaulier, G. and Zignago, S. (2010), "BACI: International Trade Database at the Product-Level. The 1994-2007 Version", *CEPII Working Paper*, N°2010-23.
+
+HS 版本對照表來源：UN Statistics Division, *Classifications Registry*.
