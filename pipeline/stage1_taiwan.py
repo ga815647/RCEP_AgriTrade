@@ -43,8 +43,13 @@ def run_stage1(start_year: int, end_year: int, top_n: int, cfg: dict, cache_db, 
                 tw_harmonized.extend(harmonize_to_hs2017(pd.Series(row_dict), concordance))
             
             tw_h_df = pd.DataFrame(tw_harmonized)
+            
+            # 排除轉口品項（不參與 Top-N 排名，但保留在明細表中）
+            exclude_codes = set(str(c).zfill(6) for c in cfg.get("exclude_hs6", {}).get("codes", []))
+            
             if not tw_h_df.empty:
-                top_items = tw_h_df.groupby("HS6_Code")["Value_USD"].sum().nlargest(top_n).index.tolist()
+                ranking_df = tw_h_df[~tw_h_df["HS6_Code"].isin(exclude_codes)] if exclude_codes else tw_h_df
+                top_items = ranking_df.groupby("HS6_Code")["Value_USD"].sum().nlargest(top_n).index.tolist()
             else:
                 top_items = []
                 

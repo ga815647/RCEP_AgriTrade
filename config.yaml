@@ -15,19 +15,31 @@ agriculture_hs_chapters: [1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20,21,
 
 hs_base_version: "HS2017"
 
-# BACI 版本路由（年份邊界固定，通常不需修改）
+# BACI 版本路由（動態結構，year_end: null 代表延伸至 time_range.end）
 baci:
   version_router:
-    "2007-2011": "HS07"
-    "2012-2016": "HS12"
-    "2017-2024": "HS17"
+    - hs_version: "HS07"
+      year_start: 2007
+      year_end: 2011
+    - hs_version: "HS12"
+      year_start: 2012
+      year_end: 2016
+    - hs_version: "HS17"
+      year_start: 2017
+      year_end: null    # 延伸至 time_range.end，不需手動同步
   baci_dir: "data/raw/baci"
   filename_pattern: "BACI_{version}_Y{year}_V*.csv"   # 使用萬用字元匹配版本號 (v4.0)
+# 排除品項清單（研究者自訂，用於過濾可能為轉口貿易的品項）
+# 若不排除任何品項，設為空清單 []
+# 排除後這些品項不參與 Top-N 計算，但仍保留在台灣明細表中並標記 exclude_reason
+exclude_hs6:
+  codes: []                 # 例如 ["220820", "240220"] 排除白蘭地與香菸
+  reason: "轉口貿易嫌疑"    # 標記原因（會寫入 Excel 的 exclude_reason 欄位）
 
 taiwan_m49: 490
 
 output:
-  format: excel
-  language: zh
-  include_quality_sheet: true
+  format: auto              # excel | csv | auto（auto = 超過 excel_row_limit 列自動切換 csv）
   output_dir: "output"
+  include_quality_sheet: true
+  excel_row_limit: 1000000  # 觸發自動切換 csv 的門檻

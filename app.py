@@ -10,6 +10,7 @@ from pipeline.stage2_baci import run_stage2
 from pipeline.stage3_clean import run_stage3
 from pipeline.stage4_export import run_stage4
 from utils.validators import check_environment
+from utils.country_codes import ALL_COUNTRIES
 
 @st.cache_resource
 def load_config():
@@ -18,29 +19,127 @@ def load_config():
 
 cfg = load_config()
 
-st.set_page_config(page_title="RCEP 農產品貿易分析系統 v4.0", layout="wide")
+st.set_page_config(page_title="RCEP 農產品貿易分析系統", layout="wide")
 
-st.title("🌾 RCEP 農產品貿易分析系統 v4.0")
+st.title("🌾 RCEP 農產品貿易分析系統")
 
 if "start_year" not in st.session_state:
     st.session_state["start_year"] = cfg["time_range"]["start"]
 if "end_year" not in st.session_state:
     st.session_state["end_year"] = cfg["time_range"]["end"]
 
+# ──────────── Sidebar ────────────
 st.sidebar.header("⚙️ 參數設定")
+
+# --- 年份範圍 ---
 start_year, end_year = st.sidebar.slider(
     "📅 時間範圍",
-    min_value=2007,
-    max_value=2024,
+    min_value=cfg["time_range"]["start"],
+    max_value=cfg["time_range"]["end"],
     value=(st.session_state["start_year"], st.session_state["end_year"]),
     step=1
 )
 st.session_state["start_year"] = start_year
 st.session_state["end_year"] = end_year
 
+# --- Top N ---
 top_n = st.sidebar.number_input("🔢 每年 Top N", min_value=5, max_value=20, value=cfg["top_n"], step=1)
+
+# --- B-1：RCEP 成員國勾選 ---
+st.sidebar.subheader("🌏 RCEP 成員國範圍")
+
+# 從 config 建立預設選取清單（ISO2 → ISO3 映射）
+_cfg_iso2_all = cfg["rcep_countries"]["asean10"] + cfg["rcep_countries"]["others"]
+_default_iso3 = []
+for iso3, v in ALL_COUNTRIES.items():
+    if v["iso2"] in _cfg_iso2_all and v["group"] != "Taiwan":
+        _default_iso3.append(iso3)
+
+# 建立可選項（全部 15 國）
+_rcep_options = []
+_rcep_labels = {}
+for iso3, v in ALL_COUNTRIES.items():
+    if v["group"] != "Taiwan":
+        label = f"{iso3} — {v['name_zh']}"
+        _rcep_options.append(iso3)
+        _rcep_labels[iso3] = label
+
+selected_rcep_iso3 = st.sidebar.multiselect(
+    "選取分析範圍內的 RCEP 成員國",
+    options=_rcep_options,
+    default=_default_iso3,
+    format_func=lambda x: _rcep_labels.get(x, x)
+)
+
+if len(selected_rcep_iso3) < 2:
+    st.sidebar.warning("⚠️ 至少需選取 2 個 RCEP 成員國")
+
+# --- B-2：農產品 HS 章節範圍 ---
+st.sidebar.subheader("🌾 農產品定義範圍")
+
+_default_chapters = cfg.get("agriculture_hs_chapters", list(range(1, 25)))
+
+# 預設組合快捷鍵
+_preset = st.sidebar.radio(
+    "快速選取",
+    options=["標準農產品 (01–24)", "含木材 (01–24, 44)", "含棉花 (01–24, 52)", "自訂"],
+    index=0,
+    horizontal=True
+)
+
+_preset_map = {
+    "標準農產品 (01–24)": list(range(1, 25)),
+    "含木材 (01–24, 44)": list(range(1, 25)) + [44],
+    "含棉花 (01–24, 52)": list(range(1, 25)) + [52],
+}
+
+if _preset != "自訂":
+    _hs_default = _preset_map[_preset]
+else:
+    _hs_default = _default_chapters
+
+_all_chapters = list(range(1, 98))
+selected_chapters = st.sidebar.multiselect(
+    "HS 章節（可多選不連續）",
+    options=_all_chapters,
+    default=_hs_default,
+    format_func=lambda x: f"Ch.{x:02d}"
+)
+
+# 動態提示
+_hs_hints = []
+if set(selected_chapters) == set(range(1, 25)):
+    _hs_hints.append("📋 標準農產品定義")
+else:
+    _hs_hints.append(f"📋 已選 {len(selected_chapters)} 個章節")
+if 44 in selected_chapters:
+    _hs_hints.append("⚠️ 含木材 (Ch.44)")
+if 52 in selected_chapters:
+    _hs_hints.append("⚠️ 含棉花 (Ch.52)")
+st.sidebar.caption("　".join(_hs_hints))
+
+# --- B-3：輸出格式選擇 ---
+st.sidebar.subheader("📄 輸出設定")
+
+_format_options = {
+    "auto": "自動（超過百萬列切換 CSV）",
+    "excel": "強制 Excel (.xlsx)",
+    "csv": "強制 CSV (.csv)"
+}
+_cfg_format = cfg.get("output", {}).get("format", "auto")
+_format_index = list(_format_options.keys()).index(_cfg_format) if _cfg_format in _format_options else 0
+
+output_format = st.sidebar.radio(
+    "輸出檔案格式",
+    options=list(_format_options.keys()),
+    index=_format_index,
+    format_func=lambda x: _format_options[x]
+)
+
+# ──────────── 執行按鈕 ────────────
 start_button = st.sidebar.button("▶ 開始執行")
 
+# ──────────── 主畫面 ────────────
 col1, col2 = st.columns(2)
 
 with col1:
@@ -68,47 +167,80 @@ log_area = st.empty()
 if start_button:
     if not all_ok:
         st.error("請先解決環境缺失問題！")
+    elif len(selected_rcep_iso3) < 2:
+        st.error("⚠️ 至少需選取 2 個 RCEP 成員國才能執行分析。")
     else:
         try:
             from utils.cache import cache_db
             from utils.baci_loader import load_country_codes, load_product_codes
-            
+            from utils.country_codes import AGR_CHAPTERS
+
+            # === 將 GUI 選擇注入到 runtime config（不寫回 yaml 檔案） ===
+            runtime_cfg = dict(cfg)  # shallow copy
+
+            # 動態覆蓋 RCEP 成員國（將 ISO3 轉回 ISO2 放入 config 格式）
+            _selected_iso2 = [ALL_COUNTRIES[iso3]["iso2"] for iso3 in selected_rcep_iso3 if iso3 in ALL_COUNTRIES]
+            runtime_cfg["rcep_countries"] = {
+                "asean10": [c for c in _selected_iso2 if ALL_COUNTRIES.get(next((k for k, v in ALL_COUNTRIES.items() if v["iso2"] == c), ""), {}).get("group") == "ASEAN10"],
+                "others":  [c for c in _selected_iso2 if ALL_COUNTRIES.get(next((k for k, v in ALL_COUNTRIES.items() if v["iso2"] == c), ""), {}).get("group") == "RCEP5"]
+            }
+
+            # 動態覆蓋農產品 HS 章節
+            runtime_cfg["agriculture_hs_chapters"] = selected_chapters
+
+            # 動態覆蓋輸出格式
+            if "output" not in runtime_cfg:
+                runtime_cfg["output"] = {}
+            runtime_cfg["output"]["format"] = output_format
+
+            # 同步更新 country_codes 模組的全局變數（RCEP_15_M49, AGR_CHAPTERS 等）
+            import utils.country_codes as cc_mod
+            _selected_m49 = {ALL_COUNTRIES[iso3]["m49"] for iso3 in selected_rcep_iso3 if iso3 in ALL_COUNTRIES}
+            cc_mod.RCEP_15_M49 = _selected_m49
+            cc_mod.ALL_M49 = _selected_m49 | {490}  # 加回台灣
+            cc_mod.AGR_CHAPTERS = {f"{i:02d}" for i in selected_chapters}
+
             status_text.text("準備中：載入 BACI 元數據 (國家與各版本品項說明)...")
             metadata = {
-                "countries": load_country_codes(cfg),
+                "countries": load_country_codes(runtime_cfg),
                 "products_by_version": {
-                    "HS07": load_product_codes("HS07", cfg),
-                    "HS12": load_product_codes("HS12", cfg),
-                    "HS17": load_product_codes("HS17", cfg)
+                    "HS07": load_product_codes("HS07", runtime_cfg),
+                    "HS12": load_product_codes("HS12", runtime_cfg),
+                    "HS17": load_product_codes("HS17", runtime_cfg)
                 }
             }
             
             baci_cache = {}
             status_text.text("Stage 1: 台灣數據過濾與 Top10 計算...")
             progress_bar.progress(10)
-            top10_dict, taiwan_df = run_stage1(st.session_state["start_year"], st.session_state["end_year"], top_n, cfg, cache_db, baci_cache)
+            top10_dict, taiwan_df = run_stage1(st.session_state["start_year"], st.session_state["end_year"], top_n, runtime_cfg, cache_db, baci_cache)
             
             status_text.text("Stage 2: BACI 數據解析...")
             progress_bar.progress(40)
-            rcep_df = run_stage2(st.session_state["start_year"], st.session_state["end_year"], top10_dict, cfg, cache_db, baci_cache)
+            rcep_df = run_stage2(st.session_state["start_year"], st.session_state["end_year"], top10_dict, runtime_cfg, cache_db, baci_cache)
             
             status_text.text("Stage 3: 數據清理與整合...")
             progress_bar.progress(70)
-            final_df = run_stage3(rcep_df, taiwan_df, top10_dict, st.session_state["start_year"], st.session_state["end_year"], cfg, metadata=metadata)
+            final_df = run_stage3(rcep_df, taiwan_df, top10_dict, st.session_state["start_year"], st.session_state["end_year"], runtime_cfg, metadata=metadata)
             
             status_text.text("Stage 4: 輸出報表...")
             progress_bar.progress(90)
-            output_path = run_stage4(final_df, top10_dict, st.session_state["start_year"], st.session_state["end_year"], cfg)
+            output_path = run_stage4(final_df, top10_dict, st.session_state["start_year"], st.session_state["end_year"], runtime_cfg)
             
             progress_bar.progress(100)
             if output_path:
                 status_text.text(f"✅ 執行完成！報表已儲存至 {output_path}")
+                # 判斷 MIME type
+                if output_path.endswith(".csv"):
+                    mime_type = "text/csv"
+                else:
+                    mime_type = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
                 with open(output_path, "rb") as file:
                     st.download_button(
-                        label="📥 下載 Excel 報表",
+                        label="📥 下載報表",
                         data=file,
                         file_name=os.path.basename(output_path),
-                        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+                        mime=mime_type
                     )
             else:
                 status_text.text("✅ 執行完成，但無有效資料可匯出。")

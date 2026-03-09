@@ -4,11 +4,18 @@ from loguru import logger
 
 def get_baci_version(year: int, cfg: dict) -> str:
     router = cfg["baci"]["version_router"]
-    for yr_range, version in router.items():
-        start, end = map(int, yr_range.split("-"))
-        if start <= year <= end:
-            return version
-    raise ValueError(f"年份 {year} 超出 BACI 支援範圍 (目前的設定是 2007-2024)")
+    if isinstance(router, list):
+        for entry in router:
+            ys = entry["year_start"]
+            ye = entry["year_end"] if entry["year_end"] is not None else cfg["time_range"]["end"]
+            if ys <= year <= ye:
+                return entry["hs_version"]
+    elif isinstance(router, dict):
+        for yr_range, version in router.items():
+            start, end = map(int, yr_range.split("-"))
+            if start <= year <= end:
+                return version
+    raise ValueError(f"年份 {year} 超出 BACI 支援範圍")
 
 def check_environment(start_year: int, end_year: int, cfg: dict) -> dict:
     """掃描所有必要檔案是否存在，回傳狀態字典 (v4.0: 支援 glob)"""

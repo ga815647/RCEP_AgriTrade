@@ -61,12 +61,21 @@ def run_stage4(final_df: pd.DataFrame, taiwan_top10: dict, start_year: int, end_
             "2023–2024 年數據為 BACI 初步值，於輸出清單之 data_provisional 欄位標記為 True，未來版本可能有微幅修正。",
             pd.NA
         ]
+    # 輸出格式判定
+    out_format = cfg.get("output", {}).get("format", "auto")
+    row_limit = cfg.get("output", {}).get("excel_row_limit", 1_000_000)
 
-    if len(final_df) > 1_000_000:
-        logger.warning("[Stage 4] 長表大於一百萬行，Excel 無法容納，將輸出 CSV 格式。")
+    use_csv = False
+    if out_format == "csv":
+        use_csv = True
+    elif out_format == "auto" and len(final_df) > row_limit:
+        logger.warning(f"[Stage 4] 長表 {len(final_df):,} 行，超過門檻 {row_limit:,}，自動切換 CSV。")
+        use_csv = True
+
+    if use_csv:
         filepath_csv = filepath.replace(".xlsx", ".csv")
         final_df.to_csv(filepath_csv, index=False, encoding="utf-8-sig")
-        logger.info(f"產出檔案: {filepath_csv}")
+        logger.info(f"產出 CSV 檔案: {filepath_csv}")
         return filepath_csv
 
     logger.info(f"[Stage 4] 寫入 Excel 以產出多工作表: {filepath}")

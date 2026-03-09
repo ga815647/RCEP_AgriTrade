@@ -6,11 +6,20 @@ from utils.country_codes import ALL_M49, AGR_CHAPTERS
 
 def get_baci_version(year: int, cfg: dict) -> str:
     router = cfg["baci"]["version_router"]
-    for yr_range, version in router.items():
-        start, end = map(int, yr_range.split("-"))
-        if start <= year <= end:
-            return version
-    raise ValueError(f"年份 {year} 超出 BACI 支援範圍 (目前的設定是 2007-2024)")
+    # 新格式 (list of dicts) — v4.2+
+    if isinstance(router, list):
+        for entry in router:
+            ys = entry["year_start"]
+            ye = entry["year_end"] if entry["year_end"] is not None else cfg["time_range"]["end"]
+            if ys <= year <= ye:
+                return entry["hs_version"]
+    # 舊格式 (dict: "2007-2011" -> "HS07") — 向下相容
+    elif isinstance(router, dict):
+        for yr_range, version in router.items():
+            start, end = map(int, yr_range.split("-"))
+            if start <= year <= end:
+                return version
+    raise ValueError(f"年份 {year} 超出 BACI 支援範圍 (請檢查 config.yaml 的 version_router)")
 
 def build_baci_path(year: int, cfg: dict) -> str:
     """用 glob 匹配實際檔案，不依賴硬編碼版本號 (v4.0)"""
