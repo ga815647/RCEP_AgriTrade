@@ -2,8 +2,9 @@ import pandas as pd
 from loguru import logger
 from utils.cache import cache_db
 from utils.baci_loader import load_baci_year
-from utils.country_codes import RCEP_15_M49
+import utils.country_codes as cc
 from utils.hs_harmonizer import load_concordance
+from pipeline.stage1_taiwan import get_config_hash
 
 def run_stage2(start_year: int, end_year: int, top_n_dict: dict, cfg: dict, cache_db, baci_cache: dict) -> pd.DataFrame:
     """
@@ -12,9 +13,11 @@ def run_stage2(start_year: int, end_year: int, top_n_dict: dict, cfg: dict, cach
     """
     frames = []
     concordance = load_concordance(cfg)
+    config_hash = get_config_hash(cfg)
+    top_n = cfg.get("top_n", 10)
 
     for year in range(start_year, end_year + 1):
-        cached = cache_db.get_baci(year)
+        cached = cache_db.get_baci(year, top_n, config_hash)
         if cached is not None:
             frames.append(cached)
             logger.info(f"[Stage 2] {year} 從快取讀取，{len(cached)} 筆")
@@ -39,8 +42,8 @@ def run_stage2(start_year: int, end_year: int, top_n_dict: dict, cfg: dict, cach
                         allowed_raw_codes.add(old_code)
 
             rcep_df = df[
-                df["i"].isin(RCEP_15_M49) &
-                df["j"].isin(RCEP_15_M49) &
+                df["i"].isin(cc.RCEP_15_M49) &
+                df["j"].isin(cc.RCEP_15_M49) &
                 df["k"].isin(allowed_raw_codes)
             ].copy()
 
@@ -53,7 +56,7 @@ def run_stage2(start_year: int, end_year: int, top_n_dict: dict, cfg: dict, cach
             rcep_df["data_provisional"] = (year >= 2023)
             rcep_df["data_source"]      = "baci"
 
-            cache_db.set_baci(year, rcep_df)
+            cache_db.set_baci(year, top_n, config_hash, rcep_df)
             frames.append(rcep_df)
             logger.info(f"[Stage 2] {year} 完成，{len(rcep_df)} 筆")
             

@@ -2,7 +2,7 @@ import os
 import glob
 import pandas as pd
 from loguru import logger
-from utils.country_codes import ALL_M49, AGR_CHAPTERS
+import utils.country_codes as cc
 
 def get_baci_version(year: int, cfg: dict) -> str:
     router = cfg["baci"]["version_router"]
@@ -81,9 +81,9 @@ def load_baci_year(year: int, cfg: dict) -> pd.DataFrame:
     ver = get_baci_version(year, cfg)
     
     df = pd.read_csv(path, dtype={"k": str})
-    df = df[df["i"].isin(ALL_M49) | df["j"].isin(ALL_M49)]   # 初步過濾，含台灣
+    df = df[df["i"].isin(cc.ALL_M49) | df["j"].isin(cc.ALL_M49)]   # 初步過濾，含台灣
     df["k"] = df["k"].str.zfill(6)
-    df = df[df["k"].str[:2].isin(AGR_CHAPTERS)]               # 農產品
+    df = df[df["k"].str[:2].isin(cc.AGR_CHAPTERS)]               # 農產品
     df["baci_version"] = ver
     logger.info(f"[BACI] {year} 讀入，過濾後 {len(df):,} 筆 (路徑: {os.path.basename(path)})")
     return df

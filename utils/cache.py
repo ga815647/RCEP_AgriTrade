@@ -61,22 +61,20 @@ class TradeCacheDB:
         with sqlite3.connect(self.db_path) as conn:
             df.to_sql(table_name, conn, if_exists="replace", index=False)
 
-    def get_baci(self, year: int) -> pd.DataFrame | None:
+    def get_baci(self, year: int, top_n: int, config_hash: str) -> pd.DataFrame | None:
+        table_name = f"baci_trade_{year}_{top_n}_{config_hash}"
         with sqlite3.connect(self.db_path) as conn:
-            cursor = conn.execute("SELECT 1 FROM baci_trade_status WHERE year = ?", (year,))
+            cursor = conn.execute("SELECT 1 FROM sqlite_master WHERE type='table' AND name=?", (table_name,))
             if cursor.fetchone():
                 try:
-                    return pd.read_sql(f"SELECT * FROM baci_trade_{year}", conn)
+                    return pd.read_sql(f"SELECT * FROM {table_name}", conn)
                 except Exception:
                     return None
             return None
 
-    def set_baci(self, year: int, df: pd.DataFrame):
+    def set_baci(self, year: int, top_n: int, config_hash: str, df: pd.DataFrame):
+        table_name = f"baci_trade_{year}_{top_n}_{config_hash}"
         with sqlite3.connect(self.db_path) as conn:
-            df.to_sql(f"baci_trade_{year}", conn, if_exists="replace", index=False)
-            conn.execute(
-                "INSERT OR REPLACE INTO baci_trade_status (year, num_records) VALUES (?, ?)",
-                (year, len(df))
-            )
+            df.to_sql(table_name, conn, if_exists="replace", index=False)
 
 cache_db = TradeCacheDB()

@@ -1,7 +1,7 @@
 import pandas as pd
 from loguru import logger
 from utils.baci_loader import load_baci_year
-from utils.country_codes import TAIWAN_M49, RCEP_15_M49
+import utils.country_codes as cc
 import hashlib
 import json
 from utils.hs_harmonizer import load_concordance, harmonize_to_hs2017
@@ -41,7 +41,7 @@ def run_stage1(start_year: int, end_year: int, top_n: int, cfg: dict, cache_db, 
             df = baci_cache[year]
 
             # 台灣出口：i=490，j∈RCEP_15
-            tw_df = df[(df["i"] == TAIWAN_M49) & (df["j"].isin(RCEP_15_M49))].copy()
+            tw_df = df[(df["i"] == cc.TAIWAN_M49) & (df["j"].isin(cc.RCEP_15_M49))].copy()
             
             # v4.1: 要計算準確的 Top 10，必須先執行 HS2017 代碼轉換
             tw_harmonized = []

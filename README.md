@@ -101,7 +101,7 @@ RCEP（Regional Comprehensive Economic Partnership）於 2022 年 1 月 1 日生
 
 1. 從各年度 BACI 原始資料中，篩選 `i = 490`（台灣 M49 代碼）且 `j ∈ RCEP₁₅`（15 個 RCEP 成員國之 M49 集合）的紀錄。
 
-2. 進一步限縮為農產品範圍：HS Chapter 01–24（依 HS6 前兩碼判定）。
+2. 進一步限縮為農產品範圍：預設為標準農產品 HS Chapter 01–24（可由 GUI 增減，如擴充含木材 Ch.44 或棉花 Ch.52）。
 
 3. **HS 版本同步轉換（Harmonization）**：由於不同年份的 BACI 資料使用不同 HS 版本（HS07/HS12/HS17），為確保跨年度可比性，在計算排名前，先將所有 HS6 代碼統一轉換至 **HS2017 基準**。
 
@@ -320,7 +320,7 @@ $$\text{Market Share}_{TW \to JP}^{030617}(t) = \frac{V_{TW \to JP}^{030617}(t)}
 | **M49=490** | 台灣在 UN Comtrade 中歸類為 "Other Asia, nes"，部分國家可能未申報對台進口 | ⚠️ 中 |
 | **不含服務貿易** | 僅分析 HS 編碼涵蓋之商品（貨物）貿易 | ℹ️ 系統邊界 |
 | **無加權拆分** | 未使用 Proportional Allocation 校準 1:N 拆分權重 | ℹ️ 改進方向 |
-| **農產品定義** | HS Chapter 01-24，不含 Chapter 44（木材）或 Chapter 52（棉花）等廣義農林產品 | ℹ️ 系統邊界 |
+| **農產品定義** | 預設為標準農產品 HS Chapter 01-24，不含 Chapter 44（木材）或 Chapter 52（棉花）等廣義農林產品 | ℹ️ 系統預設（可於 GUI 勾選擴充） |
 
 ### 6.1 報表判讀注意事項（來自實際產出的觀察）
 
