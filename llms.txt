@@ -1,0 +1,29 @@
+# RCEP AgriTrade
+A data processing pipeline and dashboard to analyze Taiwan's agricultural export competitiveness under RCEP using CEPII BACI trade data.
+
+## System Architecture
+* Architecture Pattern: Data Processing Pipeline (ETL / 4-Stage processing) with a Streamlit GUI.
+* Core Tech Stack: Python >= 3.10, Streamlit >= 1.32.0, pandas >= 2.0.0, openpyxl >= 3.1.0, loguru, PyYAML, SQLite (built-in, for caching).
+
+## Directory Structure
+* `/pipeline`: Core ETL logic divided into 4 stages (1: Taiwan exports/Top-N, 2: RCEP intra-trade matrix, 3: Clean & harmonize, 4: Export reports).
+* `/utils`: Helper modules for loading BACI data, SQLite caching, HS code harmonization, environment validation, and country code mapping.
+* `/data`: (Local/Git-ignored) Contains raw BACI CSV datasets (`raw/baci`) and UN Stats HS conversion reference tables (`reference`).
+
+## Core Data Flow / Execution Flow
+Streamlit UI (`app.py`) -> Stage 1 (`stage1_taiwan.py`: Retain ALL Taiwan agricultural exports (HS ch.01-24) from BACI; compute Top-N ranking AFTER HS2017 harmonization; output top10_dict (HS2017 codes)) -> Stage 2 (`stage2_baci.py`: Extract intra-RCEP trade matrix using reverse concordance for Top-N) -> Stage 3 (`stage3_clean.py`: Merge, harmonize to HS2017, join metadata, assign quality flags) -> Stage 4 (`stage4_export.py`: Generate multi-sheet Excel or CSV reports).
+
+## Entry Points
+* Main Application: `app.py`
+* Global Configuration: `config.yaml`
+
+## AI Coding Conventions (Crucial!)
+* Use `loguru` (`logger.info()`, `logger.error()`) for all logging. Do not use standard `print()`.
+* Must treat HS codes as 6-character strings (e.g., `str(item).zfill(6)`) to strictly preserve leading zeros. Never process HS codes as numeric types.
+* Strictly separate concerns: Frontend/UI logic stays in `app.py`, and data processing logic stays in `/pipeline`. Do not mix them.
+* Heavily utilize `pandas` DataFrames for data manipulation. Ensure consistent column naming across pipeline stages.
+* Respect the SQLite caching mechanism (`utils/cache.py`) between pipeline stages to prevent memory exhaustion (OOM) when handling large BACI datasets.
+* Top-N calculation must be performed AFTER HS harmonization (on HS2017 codes), not on raw BACI codes. Computing Top-N on pre-harmonized codes causes rank inconsistency when old codes are split into multiple HS2017 codes.
+* Stage 2 RCEP matrix filtering must use a reverse concordance lookup to derive `allowed_raw_codes` from the HS2017 Top-N list. Direct filtering by HS2017 codes on HS07/HS12 raw data will silently drop valid records (e.g., HS12 code 030749 maps to HS2017 030743).
+* Taiwan full export data (Reporter M49=490) must NOT be filtered by Top-N before Stage 3. All agricultural products (HS chapters 01–24) are retained in taiwan_df. Taiwan_Top10_Flag is an annotation column, not a filter gate.
+
