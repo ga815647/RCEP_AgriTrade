@@ -16,10 +16,12 @@ class TradeCacheDB:
             # 台灣 Top N 快取表
             conn.execute('''
                 CREATE TABLE IF NOT EXISTS taiwan_top_n (
-                    year INTEGER PRIMARY KEY,
+                    year INTEGER,
                     top_n INTEGER,
+                    config_hash TEXT,
                     top_items_json TEXT,
-                    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    PRIMARY KEY (year, top_n, config_hash)
                 )
             ''')
             # BACI 處理記錄狀態表
@@ -31,31 +33,33 @@ class TradeCacheDB:
                 )
             ''')
             
-    def get_taiwan_top_n(self, year: int, top_n: int) -> list[str] | None:
+    def get_taiwan_top_n(self, year: int, top_n: int, config_hash: str) -> list[str] | None:
         with sqlite3.connect(self.db_path) as conn:
-            cursor = conn.execute("SELECT top_items_json FROM taiwan_top_n WHERE year = ? AND top_n = ?", (year, top_n))
+            cursor = conn.execute("SELECT top_items_json FROM taiwan_top_n WHERE year = ? AND top_n = ? AND config_hash = ?", (year, top_n, config_hash))
             row = cursor.fetchone()
             if row:
                 return json.loads(row[0])
             return None
             
-    def set_taiwan_top_n(self, year: int, top_n: int, top_items: list[str]):
+    def set_taiwan_top_n(self, year: int, top_n: int, config_hash: str, top_items: list[str]):
         with sqlite3.connect(self.db_path) as conn:
             conn.execute(
-                "INSERT OR REPLACE INTO taiwan_top_n (year, top_n, top_items_json) VALUES (?, ?, ?)",
-                (year, top_n, json.dumps(top_items))
+                "INSERT OR REPLACE INTO taiwan_top_n (year, top_n, config_hash, top_items_json) VALUES (?, ?, ?, ?)",
+                (year, top_n, config_hash, json.dumps(top_items))
             )
 
-    def get_taiwan_df(self, year: int) -> pd.DataFrame | None:
+    def get_taiwan_df(self, year: int, config_hash: str) -> pd.DataFrame | None:
+        table_name = f"taiwan_df_{year}_{config_hash}"
         with sqlite3.connect(self.db_path) as conn:
-            cursor = conn.execute("SELECT 1 FROM sqlite_master WHERE type='table' AND name=?", (f"taiwan_df_{year}",))
+            cursor = conn.execute("SELECT 1 FROM sqlite_master WHERE type='table' AND name=?", (table_name,))
             if cursor.fetchone():
-                return pd.read_sql(f"SELECT * FROM taiwan_df_{year}", conn)
+                return pd.read_sql(f"SELECT * FROM {table_name}", conn)
             return None
 
-    def set_taiwan_df(self, year: int, df: pd.DataFrame):
+    def set_taiwan_df(self, year: int, config_hash: str, df: pd.DataFrame):
+        table_name = f"taiwan_df_{year}_{config_hash}"
         with sqlite3.connect(self.db_path) as conn:
-            df.to_sql(f"taiwan_df_{year}", conn, if_exists="replace", index=False)
+            df.to_sql(table_name, conn, if_exists="replace", index=False)
 
     def get_baci(self, year: int) -> pd.DataFrame | None:
         with sqlite3.connect(self.db_path) as conn:

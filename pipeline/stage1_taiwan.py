@@ -2,7 +2,17 @@ import pandas as pd
 from loguru import logger
 from utils.baci_loader import load_baci_year
 from utils.country_codes import TAIWAN_M49, RCEP_15_M49
+import hashlib
+import json
 from utils.hs_harmonizer import load_concordance, harmonize_to_hs2017
+
+def get_config_hash(cfg: dict) -> str:
+    subset = {
+        "exclude_hs6": cfg.get("exclude_hs6", {}),
+        "agriculture_hs_chapters": cfg.get("agriculture_hs_chapters", []),
+        "rcep_countries": cfg.get("rcep_countries", {})
+    }
+    return hashlib.md5(json.dumps(subset, sort_keys=True).encode()).hexdigest()
 
 def run_stage1(start_year: int, end_year: int, top_n: int, cfg: dict, cache_db, baci_cache: dict) -> tuple[dict, pd.DataFrame]:
     """
@@ -13,10 +23,11 @@ def run_stage1(start_year: int, end_year: int, top_n: int, cfg: dict, cache_db, 
     top_n_dict = {}
     taiwan_frames = []
     concordance = load_concordance(cfg)
+    config_hash = get_config_hash(cfg)
 
     for year in range(start_year, end_year + 1):
-        cached_top_n = cache_db.get_taiwan_top_n(year, top_n)
-        cached_df = cache_db.get_taiwan_df(year)
+        cached_top_n = cache_db.get_taiwan_top_n(year, top_n, config_hash)
+        cached_df = cache_db.get_taiwan_df(year, config_hash)
         if cached_top_n is not None and cached_df is not None:
             logger.info(f"[Stage 1] {year} 從快取讀取 Top {top_n} 與 DataFrame")
             top_n_dict[str(year)] = cached_top_n
@@ -70,8 +81,8 @@ def run_stage1(start_year: int, end_year: int, top_n: int, cfg: dict, cache_db, 
                 return str(m49)
             year_df["country"] = year_df["country"].apply(m49_to_iso3)
 
-            cache_db.set_taiwan_top_n(year, top_n, top_items)
-            cache_db.set_taiwan_df(year, year_df)
+            cache_db.set_taiwan_top_n(year, top_n, config_hash, top_items)
+            cache_db.set_taiwan_df(year, config_hash, year_df)
             top_n_dict[str(year)] = top_items
             taiwan_frames.append(year_df)
             logger.info(f"[Stage 1] {year} Top {top_n}：{top_items}，全部台灣出口共 {len(year_df)} 筆")

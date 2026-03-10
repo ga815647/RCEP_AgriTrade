@@ -12,7 +12,6 @@ from pipeline.stage4_export import run_stage4
 from utils.validators import check_environment
 from utils.country_codes import ALL_COUNTRIES
 
-@st.cache_resource
 def load_config():
     with open("config.yaml", "r", encoding="utf-8") as f:
         return yaml.safe_load(f)

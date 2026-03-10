@@ -22,7 +22,7 @@ Streamlit UI (`app.py`) -> Stage 1 (`stage1_taiwan.py`: Retain ALL Taiwan agricu
 * Must treat HS codes as 6-character strings (e.g., `str(item).zfill(6)`) to strictly preserve leading zeros. Never process HS codes as numeric types.
 * Strictly separate concerns: Frontend/UI logic stays in `app.py`, and data processing logic stays in `/pipeline`. Do not mix them.
 * Heavily utilize `pandas` DataFrames for data manipulation. Ensure consistent column naming across pipeline stages.
-* Respect the SQLite caching mechanism (`utils/cache.py`) between pipeline stages to prevent memory exhaustion (OOM) when handling large BACI datasets.
+* Respect the SQLite caching mechanism (`utils/cache.py`) between pipeline stages to prevent memory exhaustion (OOM) when handling large BACI datasets. The cache key includes a `config_hash` to automatically invalidate the cache when filtering rules like `exclude_hs6` or country scopes are modified in `config.yaml`.
 * Top-N calculation must be performed AFTER HS harmonization (on HS2017 codes), not on raw BACI codes. Computing Top-N on pre-harmonized codes causes rank inconsistency when old codes are split into multiple HS2017 codes.
 * Stage 2 RCEP matrix filtering must use a reverse concordance lookup to derive `allowed_raw_codes` from the HS2017 Top-N list. Direct filtering by HS2017 codes on HS07/HS12 raw data will silently drop valid records (e.g., HS12 code 030749 maps to HS2017 030743).
 * Taiwan full export data (Reporter M49=490) must NOT be filtered by Top-N before Stage 3. All agricultural products (HS chapters 01–24) are retained in taiwan_df. Taiwan_TopN_Flag is an annotation column, not a filter gate.
