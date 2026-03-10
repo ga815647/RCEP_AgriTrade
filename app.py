@@ -21,6 +21,18 @@ cfg = load_config()
 
 st.set_page_config(page_title="RCEP 農產品貿易分析系統", layout="wide")
 
+st.markdown(
+    """
+    <style>
+    [data-testid="stSidebar"] {
+        min-width: 400px;
+        max-width: 800px;
+    }
+    </style>
+    """,
+    unsafe_allow_html=True
+)
+
 st.title("🌾 RCEP 農產品貿易分析系統")
 
 if "start_year" not in st.session_state:
@@ -32,18 +44,22 @@ if "end_year" not in st.session_state:
 st.sidebar.header("⚙️ 參數設定")
 
 # --- 年份範圍 ---
-start_year, end_year = st.sidebar.slider(
-    "📅 時間範圍",
-    min_value=cfg["time_range"]["start"],
-    max_value=cfg["time_range"]["end"],
-    value=(st.session_state["start_year"], st.session_state["end_year"]),
-    step=1
-)
-st.session_state["start_year"] = start_year
-st.session_state["end_year"] = end_year
+st.sidebar.subheader("📅 時間範圍")
+col1, col2 = st.sidebar.columns(2)
+
+years = list(range(cfg["time_range"]["start"], cfg["time_range"]["end"] + 1))
+
+with col1:
+    start_year = st.selectbox("起始年份", options=years, key="start_year")
+    
+with col2:
+    end_year = st.selectbox("結束年份", options=years, key="end_year")
+
+if start_year > end_year:
+    st.sidebar.error("⚠️ 起始不得大於結束")
 
 # --- Top N ---
-top_n = st.sidebar.number_input("🔢 每年 Top N", min_value=5, max_value=20, value=cfg["top_n"], step=1)
+top_n = st.sidebar.number_input("🔢 每年 Top N", min_value=1, max_value=20, value=cfg["top_n"], step=1)
 
 # --- B-1：RCEP 成員國勾選 ---
 st.sidebar.subheader("🌏 RCEP 成員國範圍")
@@ -64,12 +80,15 @@ for iso3, v in ALL_COUNTRIES.items():
         _rcep_options.append(iso3)
         _rcep_labels[iso3] = label
 
-selected_rcep_iso3 = st.sidebar.multiselect(
-    "選取分析範圍內的 RCEP 成員國",
-    options=_rcep_options,
-    default=_default_iso3,
-    format_func=lambda x: _rcep_labels.get(x, x)
-)
+with st.sidebar.expander("🌏 RCEP 成員國細部選取", expanded=True):
+    selected_rcep_iso3 = []
+    cols = st.columns(3)
+    for i, iso3 in enumerate(_rcep_options):
+        with cols[i % 3]:
+            # 預設勾選與否來自 config 或之前的邏輯
+            is_default = iso3 in _default_iso3
+            if st.checkbox(iso3, value=is_default, key=f"rcep_{iso3}", help=_rcep_labels[iso3]):
+                selected_rcep_iso3.append(iso3)
 
 if len(selected_rcep_iso3) < 2:
     st.sidebar.warning("⚠️ 至少需選取 2 個 RCEP 成員國")
@@ -98,13 +117,14 @@ if _preset != "自訂":
 else:
     _hs_default = _default_chapters
 
-_all_chapters = list(range(1, 98))
-selected_chapters = st.sidebar.multiselect(
-    "HS 章節（可多選不連續）",
-    options=_all_chapters,
-    default=_hs_default,
-    format_func=lambda x: f"Ch.{x:02d}"
-)
+with st.sidebar.expander("🌾 農產品詳細章節選取", expanded=False):
+    selected_chapters = []
+    cols = st.columns(4)
+    for i in range(1, 98):
+        with cols[(i-1) % 4]:
+            is_default = i in _hs_default
+            if st.checkbox(f"{i:02d}", value=is_default, key=f"hs_ch_{i}"):
+                selected_chapters.append(i)
 
 # 動態提示
 _hs_hints = []
@@ -160,9 +180,7 @@ with col2:
     st.subheader("② 執行進度")
     progress_bar = st.progress(0)
     status_text = st.empty()
-    
-st.subheader("③ 即時日誌")
-log_area = st.empty()
+    download_area = st.empty()  # 預留給下載按鈕的空間
 
 if start_button:
     if not all_ok:
@@ -187,6 +205,9 @@ if start_button:
 
             # 動態覆蓋農產品 HS 章節
             runtime_cfg["agriculture_hs_chapters"] = selected_chapters
+            
+            # 動態覆蓋 Top_N (GUI 選項覆寫 config.yaml)
+            runtime_cfg["top_n"] = top_n
 
             # 動態覆蓋輸出格式
             if "output" not in runtime_cfg:
@@ -213,19 +234,19 @@ if start_button:
             baci_cache = {}
             status_text.text("Stage 1: 台灣數據過濾與 Top10 計算...")
             progress_bar.progress(10)
-            top10_dict, taiwan_df = run_stage1(st.session_state["start_year"], st.session_state["end_year"], top_n, runtime_cfg, cache_db, baci_cache)
+            top_n_dict, taiwan_df = run_stage1(st.session_state["start_year"], st.session_state["end_year"], top_n, runtime_cfg, cache_db, baci_cache)
             
             status_text.text("Stage 2: BACI 數據解析...")
             progress_bar.progress(40)
-            rcep_df = run_stage2(st.session_state["start_year"], st.session_state["end_year"], top10_dict, runtime_cfg, cache_db, baci_cache)
+            rcep_df = run_stage2(st.session_state["start_year"], st.session_state["end_year"], top_n_dict, runtime_cfg, cache_db, baci_cache)
             
             status_text.text("Stage 3: 數據清理與整合...")
             progress_bar.progress(70)
-            final_df = run_stage3(rcep_df, taiwan_df, top10_dict, st.session_state["start_year"], st.session_state["end_year"], runtime_cfg, metadata=metadata)
+            final_df = run_stage3(rcep_df, taiwan_df, top_n_dict, st.session_state["start_year"], st.session_state["end_year"], runtime_cfg, metadata=metadata)
             
             status_text.text("Stage 4: 輸出報表...")
             progress_bar.progress(90)
-            output_path = run_stage4(final_df, top10_dict, st.session_state["start_year"], st.session_state["end_year"], runtime_cfg)
+            output_path = run_stage4(final_df, top_n_dict, st.session_state["start_year"], st.session_state["end_year"], runtime_cfg)
             
             progress_bar.progress(100)
             if output_path:
@@ -235,13 +256,15 @@ if start_button:
                     mime_type = "text/csv"
                 else:
                     mime_type = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+                
                 with open(output_path, "rb") as file:
-                    st.download_button(
-                        label="📥 下載報表",
-                        data=file,
-                        file_name=os.path.basename(output_path),
-                        mime=mime_type
-                    )
+                    with download_area:
+                        st.download_button(
+                            label="📥 下載報表",
+                            data=file,
+                            file_name=os.path.basename(output_path),
+                            mime=mime_type
+                        )
             else:
                 status_text.text("✅ 執行完成，但無有效資料可匯出。")
         except Exception as e:

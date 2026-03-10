@@ -4,7 +4,7 @@ from loguru import logger
 from utils.hs_harmonizer import harmonize_to_hs2017, load_concordance
 from utils.country_codes import ALL_COUNTRIES, get_reporter_group, get_country_info
 
-def run_stage3(rcep_df: pd.DataFrame, taiwan_df: pd.DataFrame, taiwan_top10: dict, start_year: int, end_year: int, cfg: dict, metadata: dict = None) -> pd.DataFrame:
+def run_stage3(rcep_df: pd.DataFrame, taiwan_df: pd.DataFrame, top_n_dict: dict, start_year: int, end_year: int, cfg: dict, metadata: dict = None) -> pd.DataFrame:
     logger.info("[Stage 3] 載入 HS 對照表...")
     concordance = load_concordance(cfg)
     
@@ -100,14 +100,6 @@ def run_stage3(rcep_df: pd.DataFrame, taiwan_df: pd.DataFrame, taiwan_top10: dic
     else:
         final_df["HS6_Description_EN"] = "BACI Descriptions Not Loaded"
 
-    zh_map_path = "data/reference/hs6_descriptions_zh.csv"
-    if os.path.exists(zh_map_path):
-        zh_df = pd.read_csv(zh_map_path, dtype={"HS6_Code": str})
-        zh_dict = zh_df.set_index("HS6_Code")["HS6_Description_ZH"].to_dict()
-        final_df["HS6_Description_ZH"] = final_df["HS6_Code"].map(zh_dict).fillna("無說明")
-    else:
-        final_df["HS6_Description_ZH"] = "無說明"
-        
     def determine_quality(row):
         if row["Partner_ISO3"] in ["BRN", "LAO", "MMR"]:
             return "sparse"
@@ -118,16 +110,16 @@ def run_stage3(rcep_df: pd.DataFrame, taiwan_df: pd.DataFrame, taiwan_top10: dic
     final_df["data_quality"] = final_df.apply(determine_quality, axis=1)
 
     # v4.1: 所有記錄 (無論台灣或 RCEP)，皆在轉換為最終 HS2017 後
-    # 統一對照 top10_dict 來標記是否屬於當年的 Top 10 品項
+    # 統一對照 top_n_dict 來標記是否屬於當年的 Top N 品項
     def is_taiwan_top10(row):
         yr = str(int(row["Year"]))
         code = row["HS6_Code"]
-        return yr in taiwan_top10 and code in taiwan_top10[yr]
+        return yr in top_n_dict and code in top_n_dict[yr]
         
     final_df["Taiwan_Top10_Flag"] = final_df.apply(is_taiwan_top10, axis=1)
 
     REQUIRED_COLUMNS = [
-        "Year", "HS6_Code", "HS6_Code_Original", "HS6_Description_EN", "HS6_Description_ZH",
+        "Year", "HS6_Code", "HS6_Code_Original", "HS6_Description_EN",
         "HS_Chapter", "Reporter", "Reporter_ISO3", "Reporter_Group",
         "Partner", "Partner_ISO3",
         "Value_USD", "Value_USD_1000",

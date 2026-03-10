@@ -2,8 +2,8 @@
 # GUI 啟動時載入作為預設；使用者透過 GUI 修改後，以 session_state 為準
 
 time_range:
-  start: 2007      # GUI 滑桿預設左端
-  end: 2024        # GUI 滑桿預設右端
+  start: 2007      # GUI 起始預設值
+  end: 2024        # GUI 終止預設值
 
 top_n: 10          # 每年取前幾名 HS6（GUI 可調整 5–20）
 

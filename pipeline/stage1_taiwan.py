@@ -15,7 +15,7 @@ def run_stage1(start_year: int, end_year: int, top_n: int, cfg: dict, cache_db, 
     concordance = load_concordance(cfg)
 
     for year in range(start_year, end_year + 1):
-        cached_top10 = cache_db.get_taiwan_top10(year)
+        cached_top10 = cache_db.get_taiwan_top10(year, top_n)
         cached_df = cache_db.get_taiwan_df(year)
         if cached_top10 is not None and cached_df is not None:
             logger.info(f"[Stage 1] {year} 從快取讀取 Top {top_n} 與 DataFrame")
@@ -70,7 +70,7 @@ def run_stage1(start_year: int, end_year: int, top_n: int, cfg: dict, cache_db, 
                 return str(m49)
             year_df["country"] = year_df["country"].apply(m49_to_iso3)
 
-            cache_db.set_taiwan_top10(year, top_items)
+            cache_db.set_taiwan_top10(year, top_n, top_items)
             cache_db.set_taiwan_df(year, year_df)
             top10_dict[str(year)] = top_items
             taiwan_frames.append(year_df)

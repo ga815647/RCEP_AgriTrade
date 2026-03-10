@@ -3,7 +3,7 @@ import datetime
 import pandas as pd
 from loguru import logger
 
-def run_stage4(final_df: pd.DataFrame, taiwan_top10: dict, start_year: int, end_year: int, cfg: dict):
+def run_stage4(final_df: pd.DataFrame, top_n_dict: dict, start_year: int, end_year: int, cfg: dict):
     if final_df.empty:
         logger.warning("[Stage 4] 無任何資料可供輸出，跳過 Excel 生成")
         return None
@@ -29,7 +29,7 @@ def run_stage4(final_df: pd.DataFrame, taiwan_top10: dict, start_year: int, end_
     
     # Generate Top10 DataFrame (修正 4：補強 HS6_Description_EN 和 Value_USD)
     top10_records = []
-    for yr, codes in taiwan_top10.items():
+    for yr, codes in top_n_dict.items():
         yr_df = tw_export_df[tw_export_df["Year"] == int(yr)]
         for i, code in enumerate(codes):
             code_str = str(code).zfill(6)
@@ -44,7 +44,7 @@ def run_stage4(final_df: pd.DataFrame, taiwan_top10: dict, start_year: int, end_
                 "HS6_Description_EN": desc,
                 "Value_USD": val
             })
-    top10_df = pd.DataFrame(top10_records)
+    top_n_df = pd.DataFrame(top10_records)
 
     annual_summary = final_df.groupby(["Year", "Reporter"])["Value_USD"].sum().reset_index()
     quality_summary = final_df.groupby(["Year", "data_quality"]).size().reset_index(name="Record_Count")
@@ -79,9 +79,12 @@ def run_stage4(final_df: pd.DataFrame, taiwan_top10: dict, start_year: int, end_
         return filepath_csv
 
     logger.info(f"[Stage 4] 寫入 Excel 以產出多工作表: {filepath}")
+    top_n = cfg.get("top_n", 10)
+    sheet_name_top = f"Top{top_n}_HS6_清單"
+    
     with pd.ExcelWriter(filepath, engine="openpyxl") as writer:
         final_df.to_excel(writer, sheet_name="長表_完整數據", index=False)
-        top10_df.to_excel(writer, sheet_name="Top10_HS6_清單", index=False)
+        top_n_df.to_excel(writer, sheet_name=sheet_name_top, index=False)
         tw_export_df.to_excel(writer, sheet_name="台灣_RCEP出口明細", index=False)
         rcep_export_df.to_excel(writer, sheet_name="RCEP內部_出口矩陣", index=False)
         annual_summary.to_excel(writer, sheet_name="年度彙整_出口總額", index=False)
