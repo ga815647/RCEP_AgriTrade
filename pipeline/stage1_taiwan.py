@@ -8,18 +8,18 @@ def run_stage1(start_year: int, end_year: int, top_n: int, cfg: dict, cache_db, 
     """
     從 BACI 計算台灣（M49=490）對 RCEP 15 國農產品出口的 Top N HS6。
     baci_cache: 已讀入的年份 DataFrame 快取（{year: df}），供 Stage 2 共用。
-    回傳 (top10_dict, taiwan_all_df)
+    回傳 (top_n_dict, taiwan_all_df)
     """
-    top10_dict = {}
+    top_n_dict = {}
     taiwan_frames = []
     concordance = load_concordance(cfg)
 
     for year in range(start_year, end_year + 1):
-        cached_top10 = cache_db.get_taiwan_top10(year, top_n)
+        cached_top_n = cache_db.get_taiwan_top_n(year, top_n)
         cached_df = cache_db.get_taiwan_df(year)
-        if cached_top10 is not None and cached_df is not None:
+        if cached_top_n is not None and cached_df is not None:
             logger.info(f"[Stage 1] {year} 從快取讀取 Top {top_n} 與 DataFrame")
-            top10_dict[str(year)] = cached_top10
+            top_n_dict[str(year)] = cached_top_n
             taiwan_frames.append(cached_df)
             continue
 
@@ -55,7 +55,7 @@ def run_stage1(start_year: int, end_year: int, top_n: int, cfg: dict, cache_db, 
                 
             top_set = set(top_items)
             
-            # 修正：保留台灣「全部」農產品出口，不用 Top10 過濾
+            # 修正：保留台灣「全部」農產品出口，不用 Top N 過濾
             year_df = tw_df.copy()
             
             # 欄位映射為 stage3 相容的格式
@@ -70,15 +70,15 @@ def run_stage1(start_year: int, end_year: int, top_n: int, cfg: dict, cache_db, 
                 return str(m49)
             year_df["country"] = year_df["country"].apply(m49_to_iso3)
 
-            cache_db.set_taiwan_top10(year, top_n, top_items)
+            cache_db.set_taiwan_top_n(year, top_n, top_items)
             cache_db.set_taiwan_df(year, year_df)
-            top10_dict[str(year)] = top_items
+            top_n_dict[str(year)] = top_items
             taiwan_frames.append(year_df)
             logger.info(f"[Stage 1] {year} Top {top_n}：{top_items}，全部台灣出口共 {len(year_df)} 筆")
             
         except Exception as e:
             logger.error(f"[Stage 1] {year} 處理失敗: {e}")
-            top10_dict[str(year)] = []
+            top_n_dict[str(year)] = []
     
     taiwan_all_df = pd.concat(taiwan_frames, ignore_index=True) if taiwan_frames else pd.DataFrame()
-    return top10_dict, taiwan_all_df
+    return top_n_dict, taiwan_all_df

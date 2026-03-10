@@ -13,9 +13,9 @@ class TradeCacheDB:
         
     def _init_db(self):
         with sqlite3.connect(self.db_path) as conn:
-            # 台灣 Top10 快取表
+            # 台灣 Top N 快取表
             conn.execute('''
-                CREATE TABLE IF NOT EXISTS taiwan_top10 (
+                CREATE TABLE IF NOT EXISTS taiwan_top_n (
                     year INTEGER PRIMARY KEY,
                     top_n INTEGER,
                     top_items_json TEXT,
@@ -31,18 +31,18 @@ class TradeCacheDB:
                 )
             ''')
             
-    def get_taiwan_top10(self, year: int, top_n: int) -> list[str] | None:
+    def get_taiwan_top_n(self, year: int, top_n: int) -> list[str] | None:
         with sqlite3.connect(self.db_path) as conn:
-            cursor = conn.execute("SELECT top_items_json FROM taiwan_top10 WHERE year = ? AND top_n = ?", (year, top_n))
+            cursor = conn.execute("SELECT top_items_json FROM taiwan_top_n WHERE year = ? AND top_n = ?", (year, top_n))
             row = cursor.fetchone()
             if row:
                 return json.loads(row[0])
             return None
             
-    def set_taiwan_top10(self, year: int, top_n: int, top_items: list[str]):
+    def set_taiwan_top_n(self, year: int, top_n: int, top_items: list[str]):
         with sqlite3.connect(self.db_path) as conn:
             conn.execute(
-                "INSERT OR REPLACE INTO taiwan_top10 (year, top_n, top_items_json) VALUES (?, ?, ?)",
+                "INSERT OR REPLACE INTO taiwan_top_n (year, top_n, top_items_json) VALUES (?, ?, ?)",
                 (year, top_n, json.dumps(top_items))
             )
 

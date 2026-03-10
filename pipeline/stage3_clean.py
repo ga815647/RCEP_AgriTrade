@@ -111,12 +111,12 @@ def run_stage3(rcep_df: pd.DataFrame, taiwan_df: pd.DataFrame, top_n_dict: dict,
 
     # v4.1: 所有記錄 (無論台灣或 RCEP)，皆在轉換為最終 HS2017 後
     # 統一對照 top_n_dict 來標記是否屬於當年的 Top N 品項
-    def is_taiwan_top10(row):
+    def is_taiwan_top_n(row):
         yr = str(int(row["Year"]))
         code = row["HS6_Code"]
         return yr in top_n_dict and code in top_n_dict[yr]
         
-    final_df["Taiwan_Top10_Flag"] = final_df.apply(is_taiwan_top10, axis=1)
+    final_df["Taiwan_TopN_Flag"] = final_df.apply(is_taiwan_top_n, axis=1)
 
     REQUIRED_COLUMNS = [
         "Year", "HS6_Code", "HS6_Code_Original", "HS6_Description_EN",
@@ -125,7 +125,7 @@ def run_stage3(rcep_df: pd.DataFrame, taiwan_df: pd.DataFrame, top_n_dict: dict,
         "Value_USD", "Value_USD_1000",
         "data_source", "baci_version", "data_provisional",
         "hs_converted", "hs_split", "hs_mapped",
-        "data_quality", "Taiwan_Top10_Flag"
+        "data_quality", "Taiwan_TopN_Flag"
     ]
     for col in REQUIRED_COLUMNS:
         if col not in final_df.columns:

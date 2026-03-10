@@ -232,7 +232,7 @@ if start_button:
             }
             
             baci_cache = {}
-            status_text.text("Stage 1: 台灣數據過濾與 Top10 計算...")
+            status_text.text("Stage 1: 台灣數據過濾與 Top N 計算...")
             progress_bar.progress(10)
             top_n_dict, taiwan_df = run_stage1(st.session_state["start_year"], st.session_state["end_year"], top_n, runtime_cfg, cache_db, baci_cache)
             

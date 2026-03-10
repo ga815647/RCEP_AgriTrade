@@ -72,7 +72,7 @@ RCEP（Regional Comprehensive Economic Partnership）於 2022 年 1 月 1 日生
      │   Stage 1       │      │   Stage 2       │
      │ Taiwan Exports  │      │ RCEP Matrix     │
      │ M49=490 → RCEP  │◄────│ RCEP₁₅ × RCEP₁₅ │
-     │ HS Harmonize    │ top10│ filter by        │
+     │ HS Harmonize    │ top_n│ filter by        │
      │ Top-N Ranking   │─────►│ allowed_raw_codes│
      └────────┬────────┘      └────────┬────────┘
               │                        │
@@ -107,7 +107,7 @@ RCEP（Regional Comprehensive Economic Partnership）於 2022 年 1 月 1 日生
 
 4. 以轉換後之 HS2017 代碼進行 `groupby` 加總後，取出口金額前 *N* 名。
 
-**輸出**：`top10_dict = { "2007": ["030617", "210690", ...], "2008": [...], ... }`
+**輸出**：`top_n_dict = { "2007": ["030617", "210690", ...], "2008": [...], ... }`
 
 > **設計決策**：Top-N 必須在 HS 同步轉換之後計算（v4.1 修正）。
 > 若在轉換前計算，則：(a) HS07 時代的 `030379`（一個大類）可能排名第一，但轉換後被拆成 13 個 HS17 代碼，每個代碼的金額僅為原始的 1/13，不再具有 Top-N 資格；(b) 跨年度排名基準不一致，2015 年的 Top 1 與 2020 年的 Top 1 可能代表不同分類粒度的商品。
@@ -146,12 +146,12 @@ $$V_{new_i} = \frac{V_{old}}{N}, \quad \forall\, i \in \{1, 2, \ldots, N\}$$
 
 **反向查表機制（Reverse Concordance Lookup）**：
 
-由於 `top10_dict` 包含的是 **HS2017 代碼**，但 2007–2016 年的 BACI 原始資料使用 HS07 或 HS12 代碼，因此無法直接比對。系統實作了反向查表邏輯：
+由於 `top_n_dict` 包含的是 **HS2017 代碼**，但 2007–2016 年的 BACI 原始資料使用 HS07 或 HS12 代碼，因此無法直接比對。系統實作了反向查表邏輯：
 
 ```python
-allowed_raw_codes = set(top10_hs17)  # 初始化：HS17 代碼本身
+allowed_raw_codes = set(top_n_hs17)  # 初始化：HS17 代碼本身
 for old_code, new_codes in concordance[hs_version].items():
-    if any(nc in top10_hs17 for nc in new_codes):
+    if any(nc in top_n_hs17 for nc in new_codes):
         allowed_raw_codes.add(old_code)
 ```
 
@@ -167,7 +167,7 @@ for old_code, new_codes in concordance[hs_version].items():
 4. **品質標記**：
    - `data_provisional = True`：2023–2024 年（BACI 初步估計值）
    - `data_quality = "sparse"`：BRN（汶萊）、LAO（寮國）、MMR（緬甸）
-5. **Taiwan_Top10_Flag**：所有記錄（不論台灣或 RCEP）在轉換為最終 HS2017 代碼後，統一對照 `top10_dict` 標記。
+5. **Taiwan_TopN_Flag**：所有記錄（不論台灣或 RCEP）在轉換為最終 HS2017 代碼後，統一對照 `top_n_dict` 標記。
 
 ### 3.6 Stage 4：報表產出
 
@@ -279,7 +279,7 @@ streamlit run app.py
 | `HS6_Description_EN` | str | BACI metadata 提供的英文品項說明。 |
 | `Value_USD` | float | 貿易金額（美元）。注意 BACI 原始單位為千美元，系統已乘以 1000 轉換。 |
 | `baci_version` | str | 原始資料所屬 BACI 版本：`HS07` / `HS12` / `HS17`。 |
-| `Taiwan_Top10_Flag` | bool | 該品項（以 HS2017 代碼判定）是否為當年度台灣出口的前 N 名。 |
+| `Taiwan_TopN_Flag` | bool | 該品項（以 HS2017 代碼判定）是否為當年度台灣出口的前 N 名。 |
 | `hs_converted` | bool | 是否經過 HS 版本轉換。若為 True，代表原始代碼 ≠ 最終代碼。 |
 | `hs_split` | bool | 是否經過 1:N 拆分。若為 True，金額已被等比稀釋。 |
 | `hs_mapped` | bool | 是否在對照表中找到有效映射。若為 False，代表可能是新增代碼或對照缺失。 |

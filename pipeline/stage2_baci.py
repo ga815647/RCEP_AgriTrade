@@ -7,7 +7,7 @@ from utils.hs_harmonizer import load_concordance
 
 def run_stage2(start_year: int, end_year: int, top_n_dict: dict, cfg: dict, cache_db, baci_cache: dict) -> pd.DataFrame:
     """
-    從 BACI 取出 RCEP 15 國之間（i∈RCEP_15，j∈RCEP_15）的 Top10 品項出口。
+    從 BACI 取出 RCEP 15 國之間（i∈RCEP_15，j∈RCEP_15）的 Top N 品項出口。
     baci_cache: 與 Stage 1 共用，避免重複 I/O。
     """
     frames = []
@@ -27,7 +27,7 @@ def run_stage2(start_year: int, end_year: int, top_n_dict: dict, cfg: dict, cach
 
             top_n_hs17 = set(top_n_dict.get(str(year), []))
             
-            # v4.1: 反查 top10_hs17 在該年度 BACI 版本中的所有可能舊代碼
+            # v4.1: 反查 top_n_hs17 在該年度 BACI 版本中的所有可能舊代碼
             ver = df["baci_version"].iloc[0] if not df.empty and "baci_version" in df.columns else "HS17"
             hs_ver_mapped = {"HS07": "HS2007", "HS12": "HS2012", "HS17": "HS2017"}.get(ver, "HS2017")
             

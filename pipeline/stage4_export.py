@@ -24,11 +24,11 @@ def run_stage4(final_df: pd.DataFrame, top_n_dict: dict, start_year: int, end_ye
     # 修正 1：依 Reporter_Group 過濾台灣資料
     tw_export_df = final_df[final_df["Reporter_Group"] == "Taiwan"]
     
-    # 修正 2：依 Reporter_Group 排除台灣資料，且限定只輸出 Top10 品項 (避免拆分過程產生的無關附帶代碼混入矩陣)
-    rcep_export_df = final_df[(final_df["Reporter_Group"] != "Taiwan") & (final_df["Taiwan_Top10_Flag"] == True)]
+    # 修正 2：依 Reporter_Group 排除台灣資料，且限定只輸出 Top N 品項 (避免拆分過程產生的無關附帶代碼混入矩陣)
+    rcep_export_df = final_df[(final_df["Reporter_Group"] != "Taiwan") & (final_df["Taiwan_TopN_Flag"] == True)]
     
-    # Generate Top10 DataFrame (修正 4：補強 HS6_Description_EN 和 Value_USD)
-    top10_records = []
+    # Generate Top N DataFrame (修正 4：補強 HS6_Description_EN 和 Value_USD)
+    top_n_records = []
     for yr, codes in top_n_dict.items():
         yr_df = tw_export_df[tw_export_df["Year"] == int(yr)]
         for i, code in enumerate(codes):
@@ -37,14 +37,14 @@ def run_stage4(final_df: pd.DataFrame, top_n_dict: dict, start_year: int, end_ye
             desc = match_rows["HS6_Description_EN"].iloc[0] if not match_rows.empty else "N/A"
             val = float(match_rows["Value_USD"].sum()) if not match_rows.empty else 0.0
             
-            top10_records.append({
+            top_n_records.append({
                 "Year": int(yr), 
                 "Rank": i+1, 
                 "HS6_Code": code_str,
                 "HS6_Description_EN": desc,
                 "Value_USD": val
             })
-    top_n_df = pd.DataFrame(top10_records)
+    top_n_df = pd.DataFrame(top_n_records)
 
     annual_summary = final_df.groupby(["Year", "Reporter"])["Value_USD"].sum().reset_index()
     quality_summary = final_df.groupby(["Year", "data_quality"]).size().reset_index(name="Record_Count")
@@ -53,7 +53,7 @@ def run_stage4(final_df: pd.DataFrame, top_n_dict: dict, start_year: int, end_ye
     if cfg["output"]["include_quality_sheet"]:
         quality_summary.loc[len(quality_summary)] = [
             "⚠️ 注意事項 1",
-            "本報表 RCEP 內部矩陣僅涵蓋台灣 Top10 品項，各國其他農產品出口（如澳洲小麥、牛肉）不在分析範圍內，不代表各國農產品出口全貌。此矩陣專門用於評估台灣主力農產品在 RCEP 內的競爭局勢。",
+            "本報表 RCEP 內部矩陣僅涵蓋台灣 Top N 品項，各國其他農產品出口（如澳洲小麥、牛肉）不在分析範圍內，不代表各國農產品出口全貌。此矩陣專門用於評估台灣主力農產品在 RCEP 內的競爭局勢。",
             pd.NA
         ]
         quality_summary.loc[len(quality_summary)] = [
