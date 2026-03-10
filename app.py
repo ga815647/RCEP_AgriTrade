@@ -97,32 +97,58 @@ st.sidebar.subheader("🌾 農產品定義範圍")
 
 _default_chapters = cfg.get("agriculture_hs_chapters", list(range(1, 25)))
 
-# 預設組合快捷鍵
-_preset = st.sidebar.radio(
-    "快速選取",
-    options=["標準農產品 (01–24)", "含木材 (01–24, 44)", "含棉花 (01–24, 52)", "自訂"],
-    index=0,
-    horizontal=True
-)
-
 _preset_map = {
     "標準農產品 (01–24)": list(range(1, 25)),
     "含木材 (01–24, 44)": list(range(1, 25)) + [44],
     "含棉花 (01–24, 52)": list(range(1, 25)) + [52],
 }
 
-if _preset != "自訂":
-    _hs_default = _preset_map[_preset]
-else:
-    _hs_default = _default_chapters
+def get_initial_preset(chapters):
+    chapters_set = set(chapters)
+    for p_name, p_list in _preset_map.items():
+        if set(p_list) == chapters_set:
+            return p_name
+    return "自訂"
+
+if "preset_radio" not in st.session_state:
+    st.session_state.preset_radio = get_initial_preset(_default_chapters)
+
+for i in range(1, 98):
+    key = f"hs_ch_{i}"
+    if key not in st.session_state:
+        st.session_state[key] = (i in _default_chapters)
+
+def on_preset_change():
+    preset = st.session_state.preset_radio
+    if preset != "自訂":
+        hs_list = _preset_map[preset]
+        for i in range(1, 98):
+            st.session_state[f"hs_ch_{i}"] = (i in hs_list)
+
+def on_checkbox_change():
+    selected_set = {i for i in range(1, 98) if st.session_state.get(f"hs_ch_{i}", False)}
+    matched_preset = "自訂"
+    for p_name, p_list in _preset_map.items():
+        if selected_set == set(p_list):
+            matched_preset = p_name
+            break
+    st.session_state.preset_radio = matched_preset
+
+# 預設組合快捷鍵
+_preset = st.sidebar.radio(
+    "快速選取",
+    options=["標準農產品 (01–24)", "含木材 (01–24, 44)", "含棉花 (01–24, 52)", "自訂"],
+    key="preset_radio",
+    on_change=on_preset_change,
+    horizontal=True
+)
 
 with st.sidebar.expander("🌾 農產品詳細章節選取", expanded=False):
     selected_chapters = []
     cols = st.columns(4)
     for i in range(1, 98):
         with cols[(i-1) % 4]:
-            is_default = i in _hs_default
-            if st.checkbox(f"{i:02d}", value=is_default, key=f"hs_ch_{i}"):
+            if st.checkbox(f"{i:02d}", key=f"hs_ch_{i}", on_change=on_checkbox_change):
                 selected_chapters.append(i)
 
 # 動態提示
