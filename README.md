@@ -468,9 +468,9 @@ RCEP_AgriTrade/
 │
 ├── pipeline/
 │   ├── stage1_taiwan.py   # Taiwan exports extraction + HS harmonization + Top-N
-│   ├── stage2_baci.py     # RCEP intra-trade matrix with reverse concordance lookup
+│   ├── stage2_baci.py     # RCEP & Taiwan trade flows extraction (Full Agricultural Matrix)
 │   ├── stage3_clean.py    # Merge, harmonize, metadata join, quality flags
-│   └── stage4_export.py   # Multi-sheet Excel export (7 Worksheets)
+│   └── stage4_export.py   # Multi-sheet export (8 Worksheets/CSVs in ZIP)
 │
 ├── utils/
 │   ├── baci_loader.py     # BACI CSV reader with glob matching (v4.0)
@@ -523,7 +523,7 @@ exclude_hs6:
   codes: ["220820", "240220", "050510"] # 預設排除品項（如白蘭地）。若不排除請設為空陣列 []
   reason: "轉口貿易嫌疑"           # 排除原因標記
 
-custom_import_hs6: ["210690", ...] # RCEP->台灣自選進口品項 (以 HS2017 為準)
+custom_import_hs6: ["210690", "030344", "030343", "030342", "030341", "230990", "060290", "071029", "030192", "190590"] # RCEP對台灣自選進口品項 (以 HS2017 為準)
 
 output:
   format: auto                     # auto | excel | csv
