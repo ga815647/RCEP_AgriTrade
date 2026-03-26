@@ -279,6 +279,8 @@ if start_button:
                 # 判斷 MIME type
                 if output_path.endswith(".csv"):
                     mime_type = "text/csv"
+                elif output_path.endswith(".zip"):
+                    mime_type = "application/zip"
                 else:
                     mime_type = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
                 

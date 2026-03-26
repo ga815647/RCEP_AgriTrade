@@ -10,8 +10,10 @@ def get_config_hash(cfg: dict) -> str:
     subset = {
         "exclude_hs6": cfg.get("exclude_hs6", {}),
         "agriculture_hs_chapters": cfg.get("agriculture_hs_chapters", []),
-        "rcep_countries": cfg.get("rcep_countries", {})
+        "rcep_countries": cfg.get("rcep_countries", {}),
+        "custom_import_hs6": cfg.get("custom_import_hs6", [])
     }
+
     return hashlib.md5(json.dumps(subset, sort_keys=True).encode()).hexdigest()
 
 def run_stage1(start_year: int, end_year: int, top_n: int, cfg: dict, cache_db, baci_cache: dict) -> tuple[dict, pd.DataFrame]:

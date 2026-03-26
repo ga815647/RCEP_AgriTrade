@@ -28,23 +28,9 @@ def run_stage2(start_year: int, end_year: int, top_n_dict: dict, cfg: dict, cach
                 baci_cache[year] = load_baci_year(year, cfg)
             df = baci_cache[year]
 
-            top_n_hs17 = set(top_n_dict.get(str(year), []))
-            
-            # v4.1: 反查 top_n_hs17 在該年度 BACI 版本中的所有可能舊代碼
-            ver = df["baci_version"].iloc[0] if not df.empty and "baci_version" in df.columns else "HS17"
-            hs_ver_mapped = {"HS07": "HS2007", "HS12": "HS2012", "HS17": "HS2017"}.get(ver, "HS2017")
-            
-            allowed_raw_codes = set(top_n_hs17) # 預設包含自己 (fallback)
-            if hs_ver_mapped != "HS2017":
-                mapping = concordance.get(hs_ver_mapped, {})
-                for old_code, new_codes in mapping.items():
-                    if any(nc in top_n_hs17 for nc in new_codes):
-                        allowed_raw_codes.add(old_code)
-
             rcep_df = df[
                 df["i"].isin(cc.RCEP_15_M49) &
-                df["j"].isin(cc.RCEP_15_M49) &
-                df["k"].isin(allowed_raw_codes)
+                (df["j"].isin(cc.RCEP_15_M49) | (df["j"] == cc.TAIWAN_M49))
             ].copy()
 
             # 標準化欄位

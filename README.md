@@ -81,12 +81,12 @@ RCEP（Regional Comprehensive Economic Partnership）於 2022 年 1 月 1 日生
               ┌────────────┴────────────┐
               ▼                         ▼
      ┌─────────────────┐      ┌─────────────────┐
-     │   Stage 1       │      │   Stage 2       │
-     │ Taiwan Exports  │      │ RCEP Matrix     │
-     │ M49=490 → RCEP  │◄────│ RCEP₁₅ × RCEP₁₅ │
-     │ HS Harmonize    │ top_n│ filter by        │
-     │ Top-N Ranking   │─────►│ allowed_raw_codes│
-     └────────┬────────┘      └────────┬────────┘
+      │   Stage 1       │      │   Stage 2       │
+      │ Taiwan Exports  │      │ RCEP Matrix     │
+      │ M49=490 → RCEP  │      │ RCEP₁₅ → RCEP/TW│
+      │ HS Harmonize    │      │ All Agr. Products│
+      │ Top-N Ranking   │      │                 │
+      └────────┬────────┘      └────────┬────────┘
               │                        │
               └───────────┬────────────┘
                           ▼
@@ -101,7 +101,7 @@ RCEP（Regional Comprehensive Economic Partnership）於 2022 年 1 月 1 日生
                  ┌─────────────────┐
                  │   Stage 4       │
                  │ Excel Export    │
-                 │ 6 Worksheets   │
+                 │ 8 Worksheets   │
                  └─────────────────┘
 ```
 
@@ -117,9 +117,13 @@ RCEP（Regional Comprehensive Economic Partnership）於 2022 年 1 月 1 日生
 
 3. **HS 版本同步轉換（Harmonization）**：由於不同年份的 BACI 資料使用不同 HS 版本（HS07/HS12/HS17），為確保跨年度可比性，在計算排名前，先將所有 HS6 代碼統一轉換至 **HS2017 基準**。
 
-4. 以轉換後之 HS2017 代碼進行 `groupby` 加總後，取出口金額前 *N* 名。
+4. **排除轉口特殊品項與排名**：排除 `config.yaml` 中所列之轉口干擾品項（`exclude_hs6`），再以轉換後之 HS2017 代碼進行 `groupby` 加總，取出口金額前 *N* 名形成 `top_n_dict`。
 
-**輸出**：`top_n_dict = { "2007": ["030617", "210690", ...], "2008": [...], ... }`
+5. **保留全量數據**：本階段除了產出 Top-N 清單外，也完整保留台灣（對 RCEP）的所有農產品出口紀錄，送交後續階段（Stage 3）統一轉換與標記。
+
+**輸出**：
+- `top_n_dict = { "2007": ["030617", "210690", ...], "2008": [...], ... }`
+- `taiwan_df`（包含台灣對 RCEP 各年份全量農產品出口紀錄）
 
 > **設計決策**：Top-N 必須在 HS 同步轉換之後計算（v4.1 修正）。
 > 若在轉換前計算，則：(a) HS07 時代的 `030379`（一個大類）可能排名第一，但轉換後被拆成 13 個 HS17 代碼，每個代碼的金額僅為原始的 1/13，不再具有 Top-N 資格；(b) 跨年度排名基準不一致，2015 年的 Top 1 與 2020 年的 Top 1 可能代表不同分類粒度的商品。
@@ -154,24 +158,21 @@ $$V_{new_i} = \frac{V_{old}}{N}, \quad \forall\, i \in \{1, 2, \ldots, N\}$$
 
 ### 3.4 Stage 2：RCEP 內部矩陣擷取
 
-**目標**：擷取 RCEP 15 國之間、台灣 Top-N 品項的貿易流量。
+**目標**：擷取 RCEP 15 國之間，以及 RCEP 15 國對台灣的農產品貿易流量。
 
-**反向查表機制（Reverse Concordance Lookup）**：
+**全量擷取與後行過濾機制（v4.1+ 架構）**：
 
-由於 `top_n_dict` 包含的是 **HS2017 代碼**，但 2007–2016 年的 BACI 原始資料使用 HS07 或 HS12 代碼，因此無法直接比對。系統實作了反向查表邏輯：
+自 v4.1 版起，系統為避免前置過濾可能造成的歷史代碼遺漏，改採更強健的**全量擷取**策略：
 
-```python
-allowed_raw_codes = set(top_n_hs17)  # 初始化：HS17 代碼本身
-for old_code, new_codes in concordance[hs_version].items():
-    if any(nc in top_n_hs17 for nc in new_codes):
-        allowed_raw_codes.add(old_code)
-```
+1. 在 Stage 2 階段，系統會完整撈取所有 RCEP 國家出口至 RCEP 及台灣的農產品（依設定之 HS 章節，預設 01-24）全量數據。
+2. 此階段**不進行**任何 HS6 排序或過濾。
+3. 所有歷史原始數據將統一交由 Stage 3 執行 HS2017 同步轉換。待代碼統一後，再藉由 `top_n_dict` 全局標註 `Taiwan_TopN_Flag`。
 
-此步驟確保所有「未來會被轉換為 Top-N 品項」的歷史舊代碼都被納入篩選範圍。
+此架構消除了不同 HS 版本落差導致的比較誤差，更能輕易產出「台灣自選項目進口比對」等高關聯性報表，且不干擾台灣原有的出口排名。
 
 ### 3.5 Stage 3：資料清理、轉換與標記
 
-1. **RCEP 內部資料**：逐筆經過 `harmonize_to_hs2017()` 轉換為 HS2017 代碼。
+1. **RCEP 原始資料**（含內部互貿與對台出口）：逐筆經過 `harmonize_to_hs2017()` 轉換為 HS2017 代碼。
 2. **台灣出口資料**：同樣逐筆經過 `harmonize_to_hs2017()` 轉換（v4.1 修正）。
 3. **Metadata 合併**：
    - 英文商品說明（`HS6_Description_EN`）：從 BACI 附帶之 `product_codes_HS{ver}_V*.csv` 讀取，若目標版本無對應則 fallback 至 HS17。
@@ -183,9 +184,9 @@ for old_code, new_codes in concordance[hs_version].items():
 
 ### 3.6 Stage 4：報表產出
 
-產出包含 6 個工作表的 `.xlsx` 檔案（詳見第 5 節「結果判讀」）。
+產出包含 8 個工作表的 `.xlsx` 檔案（詳見第 5 節「結果判讀」）。
 
-若資料量超過 1,000,000 列（Excel 上限），自動切換為 `.csv` 輸出。
+若資料量超過 1,000,000 列（Excel 上限）或手動選擇 CSV，系統將產出一個 **.zip 壓縮檔**，內含上述 8 個工作表對應的獨立 `.csv` 檔案。
 
 ---
 
@@ -275,12 +276,14 @@ streamlit run app.py
 
 | # | 工作表名稱 | 內容 | 用途 |
 |---|-----------|------|------|
-| 1 | `長表_完整數據` | 台灣 + RCEP 所有紀錄 | 進階分析用原始資料 |
-| 2 | `Top{N}_HS6_清單` | 每年台灣出口前 N 品項 | **核心摘要** |
-| 3 | `台灣_RCEP出口明細` | 台灣全部農產品出口 | 台灣出口全貌 |
-| 4 | `RCEP內部_出口矩陣` | RCEP 間 Top-N 品項貿易 | **競爭態勢分析** |
-| 5 | `年度彙整_出口總額` | 按國家×年份加總 | 趨勢比較 |
-| 6 | `數據品質報告` | 各年品質標記統計 | 資料可信度評估 |
+| 1 | `年度彙整_出口總額` | 按國家×年份加總 | 趨勢與市佔率比較 |
+| 2 | `台灣出口_Top{N}_HS6_清單` | 每年台灣出口前 N 品項 | **核心摘要（台灣）** |
+| 3 | `台灣_RCEP出口明細` | 台灣全部農產品出口（全量） | 台灣出口全貌 |
+| 4 | `RCEP對台灣自選項目進口明細` | RCEP 到台灣的自選 HS6 貿易流 | **台灣進口替代分析** |
+| 5 | `RCEP內部_Top{N}_HS6_清單` | 每年 RCEP 內部互貿前 N 品項 | **核心摘要（RCEP 內部）** |
+| 6 | `RCEP內部_出口矩陣` | RCEP 15 國間全量貿易 | **區域內競爭分析** |
+| 7 | `長表_完整數據` | 台灣 + RCEP 所有紀錄 | 進階分析用原始資料 |
+| 8 | `數據品質報告` | 各年品質標記統計 | 資料可信度評估 |
 
 ### 5.2 關鍵欄位說明
 
@@ -302,7 +305,7 @@ streamlit run app.py
 
 #### 範例 A：辨識台灣核心出口品項
 
-在 `Top{N}_HS6_清單` 中觀察：
+在 `台灣出口_Top{N}_HS6_清單` 中觀察：
 - 若 `030617`（冷凍蝦）從 2007 到 2024 年**每年都在 Top N**，代表這是台灣對 RCEP 的**結構性核心出口品項**。
 - 若 `210690`（其他食品調製品）在 2018 年後排名驟升，可能反映台灣食品加工業的出口轉型。
 
@@ -467,7 +470,7 @@ RCEP_AgriTrade/
 │   ├── stage1_taiwan.py   # Taiwan exports extraction + HS harmonization + Top-N
 │   ├── stage2_baci.py     # RCEP intra-trade matrix with reverse concordance lookup
 │   ├── stage3_clean.py    # Merge, harmonize, metadata join, quality flags
-│   └── stage4_export.py   # Multi-sheet Excel export
+│   └── stage4_export.py   # Multi-sheet Excel export (7 Worksheets)
 │
 ├── utils/
 │   ├── baci_loader.py     # BACI CSV reader with glob matching (v4.0)
@@ -519,6 +522,8 @@ taiwan_m49: 490
 exclude_hs6:
   codes: ["220820", "240220", "050510"] # 預設排除品項（如白蘭地）。若不排除請設為空陣列 []
   reason: "轉口貿易嫌疑"           # 排除原因標記
+
+custom_import_hs6: ["210690", ...] # RCEP->台灣自選進口品項 (以 HS2017 為準)
 
 output:
   format: auto                     # auto | excel | csv
